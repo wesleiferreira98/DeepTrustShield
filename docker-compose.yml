@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Redis for job queue
+  redis:
+    image: redis:7-alpine
+    container_name: detectar-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: detectar-backend
+    environment:
+      - DATABASE_URL=sqlite:////app/data/detectar.db
+      - REDIS_URL=redis://redis:6379/0
+      - ARTIFACTS_PATH=/app/artifacts
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+    volumes:
+      - artifacts_data:/app/artifacts
+      - db_data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Worker for processing jobs
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: detectar-worker
+    environment:
+      - DATABASE_URL=sqlite:////app/data/detectar.db
+      - REDIS_URL=redis://redis:6379/0
+      - ARTIFACTS_PATH=/app/artifacts
+      - MODEL_PATH=/app/model/weights
+    volumes:
+      - artifacts_data:/app/artifacts
+      - db_data:/app/data
+      - ./model/weights:/app/model/weights:ro
+      - ./best_model_efficientnet_b0.pth:/app/model/weights/best_model_efficientnet_b0.pth:ro
+      - ./best_model_efficientnet_b3.pth:/app/model/weights/best_model_efficientnet_b3.pth:ro
+      - ./best_model_efficientnet_b4.pth:/app/model/weights/best_model_efficientnet_b4.pth:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: detectar-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  artifacts_data:
+  db_data:

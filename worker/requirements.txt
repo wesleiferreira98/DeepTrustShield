@@ -1,0 +1,11 @@
+rq>=1.16.0
+redis>=5.0.1
+sqlalchemy>=2.0.25
+pillow>=10.2.0
+numpy>=1.26.0
+opencv-python-headless>=4.9.0
+mediapipe>=0.10.9
+torch>=2.2.0
+torchvision>=0.17.0
+timm>=0.9.12
+python-dotenv>=1.0.0

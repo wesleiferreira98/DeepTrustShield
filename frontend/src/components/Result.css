@@ -1,0 +1,238 @@
+.result-container {
+  display: flex;
+  gap: 32px;
+  max-width: 900px;
+  width: 100%;
+}
+
+.result-preview {
+  flex: 0 0 300px;
+}
+
+.result-preview .preview-wrapper {
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.result-preview .preview-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.preview-label {
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.result-panel {
+  flex: 1;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.risk-badge {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.risk-badge.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
+}
+
+.risk-badge.success-light {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  color: #4ade80;
+}
+
+.risk-badge.warning {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
+}
+
+.risk-badge.danger {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+
+.risk-badge.info {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid var(--color-info);
+  color: var(--color-info);
+}
+
+.risk-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.risk-label {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.risk-description {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.score-section {
+  margin-bottom: 24px;
+}
+
+.score-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.score-value {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.score-bar {
+  height: 12px;
+  background: var(--color-bg-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.score-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.5s ease;
+}
+
+.score-fill.success { background: var(--color-success); }
+.score-fill.success-light { background: #4ade80; }
+.score-fill.warning { background: var(--color-warning); }
+.score-fill.danger { background: var(--color-danger); }
+.score-fill.info { background: var(--color-info); }
+
+.score-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.score-markers span {
+  position: absolute;
+  top: -20px;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  transform: translateX(-50%);
+}
+
+.score-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.flags-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: rgba(234, 179, 8, 0.05);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  border-radius: 8px;
+}
+
+.flags-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-warning);
+  margin-bottom: 12px;
+}
+
+.flags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flag-tag {
+  padding: 4px 12px;
+  background: rgba(234, 179, 8, 0.1);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-warning);
+}
+
+.meta-section {
+  display: flex;
+  gap: 24px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+  margin-bottom: 24px;
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meta-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.meta-value {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-reset:hover {
+  background: var(--color-primary-hover);
+}
+
+@media (max-width: 768px) {
+  .result-container {
+    flex-direction: column;
+  }
+
+  .result-preview {
+    flex: 0 0 auto;
+    max-width: 100%;
+  }
+}

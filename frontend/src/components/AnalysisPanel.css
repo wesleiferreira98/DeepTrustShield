@@ -1,0 +1,141 @@
+.analysis-container {
+  display: flex;
+  gap: 32px;
+  max-width: 900px;
+  width: 100%;
+}
+
+.analysis-preview {
+  flex: 1;
+  max-width: 400px;
+}
+
+.preview-wrapper {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+}
+
+.preview-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.bbox-overlay {
+  position: absolute;
+  border: 2px solid var(--color-primary);
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 4px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.analysis-panel {
+  flex: 1;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.panel-header {
+  margin-bottom: 24px;
+}
+
+.panel-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.status-message {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary) 0%, #a855f7 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-bg-secondary);
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.step-item.running {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--color-primary);
+}
+
+.step-item.completed {
+  opacity: 0.7;
+}
+
+.step-icon {
+  flex-shrink: 0;
+}
+
+.step-icon.pending {
+  color: var(--color-text-secondary);
+}
+
+.step-icon.running {
+  color: var(--color-primary);
+  animation: spin 1s linear infinite;
+}
+
+.step-icon.completed {
+  color: var(--color-success);
+}
+
+.step-icon.error {
+  color: var(--color-danger);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.step-label {
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .analysis-container {
+    flex-direction: column;
+  }
+
+  .analysis-preview {
+    max-width: 100%;
+  }
+}
