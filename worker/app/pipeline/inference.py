@@ -104,6 +104,56 @@ class DeepfakeDetectorV4(nn.Module):
         return probs
 
 
+class DeepfakeDetectorAlexNet(nn.Module):
+    """Modelo de detecção de deepfake v6 - AlexNet backbone."""
+    
+    def __init__(self, dropout=0.5):
+        super().__init__()
+        
+        import torchvision.models as models
+        
+        # Carregar AlexNet sem pretrained (vamos carregar os pesos do checkpoint)
+        self.backbone = models.alexnet(weights=None)
+        
+        # Extrair features (conv + avgpool)
+        self.features = self.backbone.features
+        self.avgpool = self.backbone.avgpool
+        
+        # Número de features após flatten: 256 * 6 * 6 = 9216
+        num_features = 256 * 6 * 6
+        
+        # Classifier para detecção de deepfake (binário)
+        self.classifier = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(num_features, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(4096, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout * 0.5),
+            nn.Linear(1024, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout * 0.5),
+            nn.Linear(256, 1)
+        )
+    
+    def forward(self, x):
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x.squeeze(-1)
+    
+    def predict_proba(self, x):
+        """Retorna probabilidade de ser fake."""
+        with torch.no_grad():
+            logits = self.forward(x)
+            probs = torch.sigmoid(logits)
+        return probs
+
+
 def _infer_model_name_from_filename(weights_path: str) -> str:
     filename = os.path.basename(weights_path).lower()
     for name in ("efficientnet_b4", "efficientnet_b3", "efficientnet_b0", "alexnet"):
@@ -131,16 +181,17 @@ def _discover_weight_files(model_path: str) -> list[str]:
 
     # Prioriza checkpoints mais novos do comparativo
     priority_exact = {
-        "efficientnet_b0_deepfake_v5.pth": 0,  # v5 é prioridade máxima!
-        "efficientnet_b0_deepfake_v4.pth": 1,
-        "best_model_efficientnet_b4.pth": 2,
-        "best_model_efficientnet_b3.pth": 3,
-        "best_model_efficientnet_b0.pth": 4,
-        "best_model_alexnet.pth": 5,
-        "best_model.pth": 6,
-        "efficientnet_b0_deepfake_v2.pth": 7,
-        "efficientnet_b0_deepfake_v1.pth": 8,
-        "efficientnet_b0_deepfake.pth": 9,
+        "alexnet_deepfake_v6.pth": 0,    # v6 AlexNet
+        "efficientnet_b0_deepfake_v5.pth": 1,  # v5 é prioridade máxima para EfficientNet
+        "efficientnet_b0_deepfake_v4.pth": 2,
+        "best_model_efficientnet_b4.pth": 3,
+        "best_model_efficientnet_b3.pth": 4,
+        "best_model_efficientnet_b0.pth": 5,
+        "best_model_alexnet.pth": 6,
+        "best_model.pth": 7,
+        "efficientnet_b0_deepfake_v2.pth": 8,
+        "efficientnet_b0_deepfake_v1.pth": 9,
+        "efficientnet_b0_deepfake.pth": 10,
     }
 
     def rank(path: str) -> tuple[int, str]:
@@ -202,9 +253,12 @@ def load_model(model_path: str, target_model: str = "auto"):
             if not model_name:
                 model_name = _infer_model_name_from_filename(weights_path)
 
-            # Use DeepfakeDetectorV4 for v4/v5 models, otherwise use regular DeepfakeDetector
+            # Use DeepfakeDetectorAlexNet for v6/alexnet, DeepfakeDetectorV4 for v4/v5, otherwise regular
             filename = os.path.basename(weights_path).lower()
-            if "_v4" in filename or "_v5" in filename or "v4" in filename or "v5" in filename:
+            if "_v6" in filename or "alexnet" in filename:
+                logger.info(f"Using DeepfakeDetectorAlexNet architecture for {filename}")
+                model = DeepfakeDetectorAlexNet(dropout=0.5)
+            elif "_v4" in filename or "_v5" in filename or "v4" in filename or "v5" in filename:
                 logger.info(f"Using DeepfakeDetectorV4 architecture for {filename}")
                 model = DeepfakeDetectorV4(model_name=model_name, num_classes=1, dropout=0.5)
             else:

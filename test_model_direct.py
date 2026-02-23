@@ -11,7 +11,7 @@ from PIL import Image
 from torchvision import transforms
 
 # Configuração
-MODEL_PATH = '/home/wesleiferreira/Documentos/detectar/model/weights/efficientnet_b0_deepfake_v4.pth'
+MODEL_PATH = '/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/model/weights/efficientnet_b0_deepfake_v4.pth'
 IMG_SIZE = 224
 NORMALIZE_MEAN = [0.485, 0.456, 0.406]
 NORMALIZE_STD = [0.229, 0.224, 0.225]
