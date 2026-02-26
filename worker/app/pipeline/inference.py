@@ -13,6 +13,7 @@ _device = None
 _best_threshold = 0.5  # Pode ser sobrescrito pelo checkpoint
 _loaded_model_name = None
 _loaded_weights_path = None
+_loaded_model_version = None
 
 
 def get_device():
@@ -162,6 +163,17 @@ def _infer_model_name_from_filename(weights_path: str) -> str:
     return "efficientnet_b0"
 
 
+def _infer_model_version(model_name: str, weights_path: str) -> str:
+    filename = os.path.basename(weights_path).lower()
+    if "alexnet" in filename and ("_v6" in filename or "v6" in filename):
+        return "alexnet_v6"
+    if "efficientnet_b0" in filename and ("_v5" in filename or "v5" in filename):
+        return "efficientnet_b0_v5"
+    if "efficientnet_b0" in filename and ("_v4" in filename or "v4" in filename):
+        return "efficientnet_b0_v4"
+    return model_name
+
+
 def _candidate_weight_dirs(model_path: str) -> list[str]:
     base = os.path.abspath(model_path)
     parent = os.path.dirname(base)
@@ -213,7 +225,20 @@ def _select_candidates(candidate_weights: list[str], target_model: str) -> list[
     if not target_model or target_model == "auto":
         return candidate_weights
 
-    preferred = [p for p in candidate_weights if target_model in os.path.basename(p).lower()]
+    alias_map = {
+        "efficientnet_b0_v4": ("efficientnet_b0_v4", "_v4", "deepfake_v4", "final_model_efficientnet_b0_v4"),
+        "efficientnet_b0_v5": ("efficientnet_b0_v5", "_v5", "deepfake_v5", "efficientnet_b0_deepfake_v5"),
+        "efficientnet_b0": ("efficientnet_b0",),
+        "efficientnet_b3": ("efficientnet_b3",),
+        "efficientnet_b4": ("efficientnet_b4",),
+        "alexnet": ("alexnet",),
+    }
+    aliases = alias_map.get(target_model, (target_model,))
+
+    preferred = [
+        p for p in candidate_weights
+        if any(alias in os.path.basename(p).lower() for alias in aliases)
+    ]
     fallback = [p for p in candidate_weights if p not in preferred]
     return preferred + fallback
 
@@ -227,7 +252,7 @@ def load_model(model_path: str, target_model: str = "auto"):
     - efficientnet_b0_deepfake_v1.pth (trained checkpoint from Colab)
     - efficientnet_b0_deepfake.pth (legacy format)
     """
-    global _model, _best_threshold, _loaded_model_name, _loaded_weights_path
+    global _model, _best_threshold, _loaded_model_name, _loaded_weights_path, _loaded_model_version
     
     # Reuse cache only if loaded model already matches requested target
     if _model is not None and (target_model == "auto" or _loaded_model_name == target_model):
@@ -281,6 +306,7 @@ def load_model(model_path: str, target_model: str = "auto"):
 
             _loaded_model_name = model_name
             _loaded_weights_path = weights_path
+            _loaded_model_version = _infer_model_version(model_name, weights_path)
             weights_loaded = True
             break
         except Exception as e:
@@ -308,6 +334,10 @@ def get_threshold() -> float:
 
 def get_loaded_model_name() -> str:
     return _loaded_model_name or "unknown"
+
+
+def get_loaded_model_version() -> str:
+    return _loaded_model_version or get_loaded_model_name()
 
 
 def run_inference(face_tensor: torch.Tensor, model_path: str, target_model: str = "auto") -> float:

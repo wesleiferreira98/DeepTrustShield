@@ -26,6 +26,8 @@ queue = Queue('deepfake', connection=redis_conn)
 
 ALLOWED_TARGET_MODELS = {
     "auto",
+    "efficientnet_b0_v4",
+    "efficientnet_b0_v5",
     "efficientnet_b0",
     "efficientnet_b3",
     "efficientnet_b4",
@@ -121,6 +123,12 @@ async def analyze_image(
         raise HTTPException(
             status_code=400,
             detail=f"Tipo de arquivo não suportado. Use: {', '.join(allowed_types)}"
+        )
+
+    if target_model not in ALLOWED_TARGET_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Modelo alvo inválido. Use um de: {', '.join(sorted(ALLOWED_TARGET_MODELS))}"
         )
     
     # Generate job ID
@@ -253,8 +261,3 @@ async def get_artifact(job_id: str, name: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Artefato não encontrado")
     
     return FileResponse(file_path)
-    if target_model not in ALLOWED_TARGET_MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Modelo alvo inválido. Use um de: {', '.join(sorted(ALLOWED_TARGET_MODELS))}"
-        )

@@ -35,6 +35,23 @@ function Upload({ onUpload }) {
 
   return (
     <div className="upload-container">
+      <div className="model-target-card">
+        <label htmlFor="target-model">Modelo alvo</label>
+        <select
+          id="target-model"
+          value={targetModel}
+          onChange={(e) => setTargetModel(e.target.value)}
+        >
+          <option value="auto">Automático (melhor disponível)</option>
+          <option value="efficientnet_b0_v5">EfficientNet-B0 v5</option>
+          <option value="efficientnet_b0_v4">EfficientNet-B0 v4</option>
+          <option value="efficientnet_b0">EfficientNet-B0 (genérico)</option>
+          <option value="efficientnet_b3">EfficientNet-B3</option>
+          <option value="efficientnet_b4">EfficientNet-B4</option>
+          <option value="alexnet">AlexNet</option>
+        </select>
+      </div>
+
       <div 
         className={`upload-zone ${isDragging ? 'dragging' : ''}`}
         onDragOver={handleDragOver}
@@ -46,22 +63,6 @@ function Upload({ onUpload }) {
         </div>
         <h2>Arraste uma selfie aqui</h2>
         <p>ou clique para selecionar</p>
-
-        <div className="model-target">
-          <label htmlFor="target-model">Modelo alvo</label>
-          <select
-            id="target-model"
-            value={targetModel}
-            onChange={(e) => setTargetModel(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <option value="auto">Automático (melhor disponível)</option>
-            <option value="efficientnet_b0">EfficientNet-B0</option>
-            <option value="efficientnet_b3">EfficientNet-B3</option>
-            <option value="efficientnet_b4">EfficientNet-B4</option>
-            <option value="alexnet">AlexNet</option>
-          </select>
-        </div>
         
         <input
           type="file"

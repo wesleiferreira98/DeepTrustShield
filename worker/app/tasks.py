@@ -11,7 +11,7 @@ from app.config import config
 from app.pipeline.face_detection import detect_faces
 from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
-from app.pipeline.inference import run_inference, get_loaded_model_name
+from app.pipeline.inference import run_inference, get_loaded_model_version
 from app.db_models import Base, Job, Result, Artifact
 
 # Setup logging
@@ -173,8 +173,8 @@ def process_deepfake_image(job_id: str, image_path: str, target_model: str = "au
         time.sleep(0.2)  # Evidence already saved
         
         # Save final result
-        loaded_model = get_loaded_model_name()
-        save_result(db, job_id, p_fake, risk_level, flags, model_version=loaded_model)
+        loaded_model_version = get_loaded_model_version()
+        save_result(db, job_id, p_fake, risk_level, flags, model_version=loaded_model_version)
         
         # Done
         update_stage(db, job_id, "done")

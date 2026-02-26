@@ -1,0 +1,94 @@
+# ==============================================================================
+# DeepTrustShield - Container Ignore
+# ==============================================================================
+# Arquivos ignorados durante o build das imagens
+# ==============================================================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+.env
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Tests
+tests/
+test/
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Documentação
+docs/
+*.md
+!README.md
+
+# Arquivos de desenvolvimento
+Makefile
+docker-compose*.yml
+podman-compose*.yml
+*.sh
+*.bat
+
+# Dados locais
+*.db
+*.sqlite
+*.sqlite3
+data/
+artifacts/
+
+# Notebooks
+notebooks/
+*.ipynb
+.ipynb_checkpoints/
+
+# Modelos (podem ser grandes)
+# Descomente se quiser incluir modelos nas imagens
+# model/weights/
+# *.pth
+
+# Outros
+.env*
+!.env.example
+tmp/
+temp/
+cache/
