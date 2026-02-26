@@ -1,4 +1,4 @@
-# 🖥️ Backend - API FastAPI
+# Backend - API FastAPI
 
 ## Visão Geral
 
@@ -40,16 +40,16 @@ backend/
 class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./detectar.db"
-    
+  
     # Redis
     redis_url: str = "redis://localhost:6379/0"
-    
+  
     # Artifacts
     artifacts_path: str = "./artifacts"
-    
+  
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
-    
+  
     # Model
     model_version: str = "efficientnet-b0-v1"
 ```
@@ -74,6 +74,7 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 Inicia uma análise de deepfake em uma imagem.
 
 **Request:**
+
 ```http
 POST /v1/deepfake/image/analyze
 Content-Type: multipart/form-data
@@ -83,6 +84,7 @@ target_model: auto | efficientnet_b0 | efficientnet_b0_v4 | efficientnet_b0_v5 |
 ```
 
 **Response:**
+
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -92,6 +94,7 @@ target_model: auto | efficientnet_b0 | efficientnet_b0_v4 | efficientnet_b0_v5 |
 ```
 
 **Validações:**
+
 - Tipos aceitos: `image/jpeg`, `image/png`, `image/webp`
 - Tamanho máximo: configurável (padrão do servidor)
 
@@ -102,6 +105,7 @@ target_model: auto | efficientnet_b0 | efficientnet_b0_v4 | efficientnet_b0_v5 |
 Consulta o status atual de um job.
 
 **Response:**
+
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -126,18 +130,18 @@ Consulta o status atual de um job.
 
 **Estágios do Pipeline:**
 
-| Stage | Progress | Descrição |
-|-------|----------|-----------|
-| `pending` | 0% | Aguardando na fila |
-| `validating_image` | 10% | Validando formato |
-| `detecting_face` | 25% | Detectando face com MediaPipe |
-| `quality_checks` | 40% | Verificando blur, brilho |
-| `preprocessing` | 55% | Crop + resize + normalização |
-| `model_inference` | 70% | Inferência com EfficientNet |
-| `calibrating_score` | 85% | Aplicando thresholds |
-| `generating_evidence` | 95% | Salvando artefatos |
-| `done` | 100% | Concluído |
-| `error` | - | Erro no processamento |
+| Stage                   | Progress | Descrição                    |
+| ----------------------- | -------- | ------------------------------ |
+| `pending`             | 0%       | Aguardando na fila             |
+| `validating_image`    | 10%      | Validando formato              |
+| `detecting_face`      | 25%      | Detectando face com MediaPipe  |
+| `quality_checks`      | 40%      | Verificando blur, brilho       |
+| `preprocessing`       | 55%      | Crop + resize + normalização |
+| `model_inference`     | 70%      | Inferência com EfficientNet   |
+| `calibrating_score`   | 85%      | Aplicando thresholds           |
+| `generating_evidence` | 95%      | Salvando artefatos             |
+| `done`                | 100%     | Concluído                     |
+| `error`               | -        | Erro no processamento          |
 
 ---
 
@@ -146,6 +150,7 @@ Consulta o status atual de um job.
 Obtém o resultado final da análise.
 
 **Response (sucesso):**
+
 ```json
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -170,12 +175,12 @@ Obtém o resultado final da análise.
 
 **Níveis de Risco:**
 
-| Risk Level | p_fake Range | Interpretação |
-|------------|--------------|---------------|
-| `low` | < 0.50 | Provavelmente real |
-| `medium` | 0.50 - 0.80 | Inconclusivo |
-| `high` | ≥ 0.80 | Provavelmente fake |
-| `undetermined` | N/A | Sem face detectada |
+| Risk Level       | p_fake Range | Interpretação    |
+| ---------------- | ------------ | ------------------ |
+| `low`          | < 0.50       | Provavelmente real |
+| `medium`       | 0.50 - 0.80  | Inconclusivo       |
+| `high`         | ≥ 0.80      | Provavelmente fake |
+| `undetermined` | N/A          | Sem face detectada |
 
 ---
 
@@ -184,6 +189,7 @@ Obtém o resultado final da análise.
 Baixa um artefato específico de um job.
 
 **Exemplos:**
+
 ```
 GET /v1/deepfake/image/artifacts/550e8400.../face_crop.jpg
 GET /v1/deepfake/image/artifacts/550e8400.../original.jpg
@@ -252,7 +258,7 @@ class ResultResponse(BaseModel):
 # Job - Estado do processamento
 class Job(Base):
     __tablename__ = "jobs"
-    
+  
     id = Column(String, primary_key=True)
     stage = Column(String, default="pending")
     progress = Column(Integer, default=0)
@@ -264,7 +270,7 @@ class Job(Base):
 # Result - Resultado da análise
 class Result(Base):
     __tablename__ = "results"
-    
+  
     id = Column(Integer, primary_key=True)
     job_id = Column(String, ForeignKey("jobs.id"))
     p_fake = Column(Float, nullable=True)
@@ -275,7 +281,7 @@ class Result(Base):
 # Artifact - Artefatos gerados
 class Artifact(Base):
     __tablename__ = "artifacts"
-    
+  
     id = Column(Integer, primary_key=True)
     job_id = Column(String, ForeignKey("jobs.id"))
     face_crop_path = Column(String, nullable=True)
