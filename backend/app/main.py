@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from app.config import get_settings
-from app.api import deepfake, deepfake_video
+from app.api import deepfake, deepfake_video, liveness
 from app.db.database import engine, Base
 
 # Create tables
@@ -35,6 +35,7 @@ app.mount("/artifacts", StaticFiles(directory=settings.artifacts_path), name="ar
 # Include routers
 app.include_router(deepfake.router, prefix="/v1/deepfake/image", tags=["deepfake"])
 app.include_router(deepfake_video.router, prefix="/v1/deepfake/video", tags=["deepfake-video"])
+app.include_router(liveness.router, prefix="/v1/liveness", tags=["liveness"])
 
 
 @app.get("/")

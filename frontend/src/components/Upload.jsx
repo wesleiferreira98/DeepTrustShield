@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Image, Upload as UploadIcon, Video } from 'lucide-react';
 import './Upload.css';
 
 const MAX_RECORDING_MS = 5000;
 const FRAME_COUNT = 7;
-const LIVENESS_REQUIRED_BLINKS = 1;
-const LIVENESS_TIMEOUT_MS = 8000;
+const LIVENESS_TIMEOUT_MS = 12000;
+
 const BLINK_CLOSE_THRESHOLD_FACTOR = 0.82;
 const BLINK_MIN_CLOSED_FRAMES = 1;
+const DISTANCE_TARGET_RANGE_RATIO = 0.16;
+const SMILE_TARGET_FACTOR = 1.12;
+const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 2;
 
 const SCRIPT_CACHE = {};
 
@@ -43,6 +46,15 @@ async function loadMediaPipeFaceMesh() {
   }
 }
 
+function shuffle(items) {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function Upload({ onImageUpload, onVideoUpload }) {
   const [mode, setMode] = useState('image');
   const [isDragging, setIsDragging] = useState(false);
@@ -56,15 +68,21 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const [recordingMsLeft, setRecordingMsLeft] = useState(MAX_RECORDING_MS);
   const [faceDetected, setFaceDetected] = useState(false);
   const [faceValidationMode, setFaceValidationMode] = useState('none');
+
   const [livenessStatus, setLivenessStatus] = useState('pending'); // pending | passed | timeout | unavailable
   const [livenessProgress, setLivenessProgress] = useState(0);
+  const [challengeLabel, setChallengeLabel] = useState('');
+  const [challengeStep, setChallengeStep] = useState({ index: 0, total: 0 });
+  const [challengeHint, setChallengeHint] = useState('');
+
   const [earDebug, setEarDebug] = useState({
     ear: null,
     baseline: null,
     threshold: null,
     closedFrames: 0,
     blinks: 0,
-    isClosed: false,
+    faceWidth: null,
+    smileScore: null,
   });
 
   const videoRef = useRef(null);
@@ -73,13 +91,25 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const detectorIntervalRef = useRef(null);
   const detectorBusyRef = useRef(false);
   const recordingTickerRef = useRef(null);
+
   const livenessStatusRef = useRef('pending');
+  const livenessStartRef = useRef(null);
+  const challengesRef = useRef([]);
+  const challengeIndexRef = useRef(0);
 
   const blinkCountRef = useRef(0);
   const eyeClosedFramesRef = useRef(0);
   const eyeWasClosedRef = useRef(false);
   const eyeBaselineRef = useRef(0.28);
-  const livenessStartRef = useRef(null);
+
+  const distanceMinRef = useRef(null);
+  const distanceMaxRef = useRef(null);
+  const distanceBaselineRef = useRef(null);
+
+  const smileBaselineRef = useRef(null);
+  const smileConsecutiveRef = useRef(0);
+
+  const detectorLabelMap = useMemo(() => ({ mediapipe: 'MediaPipe', none: 'Backend' }), []);
 
   const stopFaceDetection = useCallback(() => {
     if (detectorIntervalRef.current) {
@@ -97,25 +127,92 @@ function Upload({ onImageUpload, onVideoUpload }) {
     setRecordingMsLeft(MAX_RECORDING_MS);
   }, []);
 
-  const resetLiveness = useCallback((detectorMode = faceValidationMode) => {
+  const resetChallengeInternals = useCallback(() => {
     blinkCountRef.current = 0;
     eyeClosedFramesRef.current = 0;
     eyeWasClosedRef.current = false;
     eyeBaselineRef.current = 0.28;
-    livenessStartRef.current = detectorMode === 'none' ? null : Date.now();
-    setLivenessProgress(0);
+
+    distanceMinRef.current = null;
+    distanceMaxRef.current = null;
+    distanceBaselineRef.current = null;
+
+    smileBaselineRef.current = null;
+    smileConsecutiveRef.current = 0;
+
     setEarDebug({
       ear: null,
-      baseline: eyeBaselineRef.current,
-      threshold: eyeBaselineRef.current * BLINK_CLOSE_THRESHOLD_FACTOR,
+      baseline: null,
+      threshold: null,
       closedFrames: 0,
       blinks: 0,
-      isClosed: false,
+      faceWidth: null,
+      smileScore: null,
     });
-    const nextStatus = detectorMode === 'none' ? 'unavailable' : 'pending';
-    livenessStatusRef.current = nextStatus;
-    setLivenessStatus(nextStatus);
-  }, [faceValidationMode]);
+  }, []);
+
+  const applyChallengeUi = useCallback((index) => {
+    const all = challengesRef.current;
+    const challenge = all[index];
+    if (!challenge) {
+      return;
+    }
+
+    setChallengeStep({ index: index + 1, total: all.length });
+    setChallengeLabel(challenge.label);
+    setChallengeHint(challenge.hint);
+    setLivenessProgress(0);
+  }, []);
+
+  const buildChallenges = useCallback(() => {
+    const blinkTarget = Math.random() > 0.5 ? 2 : 1;
+    const base = [
+      {
+        type: 'blink',
+        target: blinkTarget,
+        label: `Piscar ${blinkTarget}x`,
+        hint: `Piscar ${blinkTarget} vez(es) de forma intencional.`,
+      },
+      {
+        type: 'distance',
+        target: DISTANCE_TARGET_RANGE_RATIO,
+        label: 'Aproximar/Afastar',
+        hint: 'Aproxime e afaste o rosto da camera.',
+      },
+      {
+        type: 'smile',
+        target: SMILE_TARGET_FACTOR,
+        label: 'Sorrir',
+        hint: 'Sorria claramente por um instante.',
+      },
+    ];
+
+    return shuffle(base);
+  }, []);
+
+  const resetLiveness = useCallback((detectorMode = faceValidationMode) => {
+    resetChallengeInternals();
+
+    if (detectorMode === 'none') {
+      livenessStatusRef.current = 'unavailable';
+      setLivenessStatus('unavailable');
+      setChallengeStep({ index: 0, total: 0 });
+      setChallengeLabel('Prova de vida indisponivel');
+      setChallengeHint('Navegador sem suporte local.');
+      setLivenessProgress(0);
+      livenessStartRef.current = null;
+      return;
+    }
+
+    challengesRef.current = buildChallenges();
+    challengeIndexRef.current = 0;
+    livenessStartRef.current = Date.now();
+    livenessStatusRef.current = 'pending';
+    setLivenessStatus('pending');
+    applyChallengeUi(0);
+  }, [applyChallengeUi, buildChallenges, faceValidationMode, resetChallengeInternals]);
+
+  const toDistance = useCallback((a, b) => Math.hypot((a.x - b.x), (a.y - b.y)), []);
 
   const calcEAR = useCallback((landmarks, [p1, p2, p3, p4, p5, p6]) => {
     const a = landmarks[p2];
@@ -127,13 +224,64 @@ function Upload({ onImageUpload, onVideoUpload }) {
     if (!a || !b || !c || !d || !e || !f) {
       return null;
     }
-    const dist = (u, v) => Math.hypot((u.x - v.x), (u.y - v.y));
-    const horizontal = dist(e, f);
+
+    const horizontal = toDistance(e, f);
     if (!Number.isFinite(horizontal) || horizontal < 1e-4) {
       return null;
     }
-    return (dist(a, b) + dist(c, d)) / (2 * horizontal);
-  }, []);
+
+    return (toDistance(a, b) + toDistance(c, d)) / (2 * horizontal);
+  }, [toDistance]);
+
+  const computeMetrics = useCallback((landmarks) => {
+    if (!Array.isArray(landmarks) || landmarks.length < 387) {
+      return null;
+    }
+
+    const leftEAR = calcEAR(landmarks, [33, 160, 158, 133, 153, 144]);
+    const rightEAR = calcEAR(landmarks, [362, 385, 387, 263, 373, 380]);
+    if (leftEAR === null || rightEAR === null) {
+      return null;
+    }
+    const ear = (leftEAR + rightEAR) / 2;
+
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    for (const lm of landmarks) {
+      minX = Math.min(minX, lm.x);
+      maxX = Math.max(maxX, lm.x);
+    }
+    const faceWidth = maxX - minX;
+
+    const leftEye = landmarks[33];
+    const rightEye = landmarks[263];
+    const eyeDist = toDistance(leftEye, rightEye);
+    if (!Number.isFinite(eyeDist) || eyeDist < 1e-4) {
+      return null;
+    }
+
+    const mouthLeft = landmarks[61];
+    const mouthRight = landmarks[291];
+    const mouthWidth = toDistance(mouthLeft, mouthRight);
+    const smileScore = mouthWidth / eyeDist;
+
+    return { ear, faceWidth, smileScore };
+  }, [calcEAR, toDistance]);
+
+  const completeCurrentChallenge = useCallback(() => {
+    const nextIndex = challengeIndexRef.current + 1;
+    if (nextIndex >= challengesRef.current.length) {
+      livenessStatusRef.current = 'passed';
+      setLivenessStatus('passed');
+      setLivenessProgress(100);
+      setVideoStep('Prova de vida aprovada. Pronto para gravar.');
+      return;
+    }
+
+    challengeIndexRef.current = nextIndex;
+    resetChallengeInternals();
+    applyChallengeUi(nextIndex);
+  }, [applyChallengeUi, resetChallengeInternals]);
 
   const updateLivenessFromLandmarks = useCallback((landmarks) => {
     const currentStatus = livenessStatusRef.current;
@@ -145,17 +293,17 @@ function Upload({ onImageUpload, onVideoUpload }) {
       if (livenessStatusRef.current !== 'timeout') {
         livenessStatusRef.current = 'timeout';
         setLivenessStatus('timeout');
-        setVideoStep('Nao detectamos o piscar ainda. Tente novamente piscando de forma intencional.');
+        setVideoStep('Tempo excedido para prova de vida. Reative a camera e tente novamente.');
       }
-    }
-
-    const leftEAR = calcEAR(landmarks, [33, 160, 158, 133, 153, 144]);
-    const rightEAR = calcEAR(landmarks, [362, 385, 387, 263, 373, 380]);
-    if (leftEAR === null || rightEAR === null) {
       return;
     }
 
-    const ear = (leftEAR + rightEAR) / 2;
+    const metrics = computeMetrics(landmarks);
+    if (!metrics) {
+      return;
+    }
+
+    const { ear, faceWidth, smileScore } = metrics;
 
     if (ear > 0.18) {
       eyeBaselineRef.current = (eyeBaselineRef.current * 0.9) + (ear * 0.1);
@@ -175,23 +323,75 @@ function Upload({ onImageUpload, onVideoUpload }) {
       eyeClosedFramesRef.current = 0;
     }
 
-    const progress = Math.max(0, Math.min(100, (blinkCountRef.current / LIVENESS_REQUIRED_BLINKS) * 100));
-    setLivenessProgress(progress);
+    if (distanceBaselineRef.current === null) {
+      distanceBaselineRef.current = faceWidth;
+      distanceMinRef.current = faceWidth;
+      distanceMaxRef.current = faceWidth;
+    } else {
+      distanceMinRef.current = Math.min(distanceMinRef.current, faceWidth);
+      distanceMaxRef.current = Math.max(distanceMaxRef.current, faceWidth);
+    }
+
+    if (smileBaselineRef.current === null) {
+      smileBaselineRef.current = smileScore;
+    } else if (smileScore < smileBaselineRef.current * 1.2) {
+      smileBaselineRef.current = (smileBaselineRef.current * 0.95) + (smileScore * 0.05);
+    }
+
+    const currentChallenge = challengesRef.current[challengeIndexRef.current];
+    if (!currentChallenge) {
+      return;
+    }
+
+    let progress = 0;
+
+    if (currentChallenge.type === 'blink') {
+      progress = Math.max(0, Math.min(100, (blinkCountRef.current / currentChallenge.target) * 100));
+      setLivenessProgress(progress);
+
+      if (blinkCountRef.current >= currentChallenge.target) {
+        completeCurrentChallenge();
+      }
+    }
+
+    if (currentChallenge.type === 'distance') {
+      const base = distanceBaselineRef.current || faceWidth;
+      const range = Math.max(0, (distanceMaxRef.current - distanceMinRef.current) / Math.max(base, 1e-4));
+      progress = Math.max(0, Math.min(100, (range / currentChallenge.target) * 100));
+      setLivenessProgress(progress);
+
+      if (range >= currentChallenge.target) {
+        completeCurrentChallenge();
+      }
+    }
+
+    if (currentChallenge.type === 'smile') {
+      const baseline = smileBaselineRef.current || smileScore;
+      const ratio = smileScore / Math.max(baseline, 1e-4);
+      if (ratio >= currentChallenge.target) {
+        smileConsecutiveRef.current += 1;
+      } else {
+        smileConsecutiveRef.current = 0;
+      }
+
+      progress = Math.max(0, Math.min(100, (ratio / currentChallenge.target) * 100));
+      setLivenessProgress(progress);
+
+      if (smileConsecutiveRef.current >= SMILE_CONSECUTIVE_FRAMES_REQUIRED) {
+        completeCurrentChallenge();
+      }
+    }
+
     setEarDebug({
       ear,
       baseline: eyeBaselineRef.current,
       threshold: closeThreshold,
       closedFrames: eyeClosedFramesRef.current,
       blinks: blinkCountRef.current,
-      isClosed,
+      faceWidth,
+      smileScore,
     });
-
-    if (blinkCountRef.current >= LIVENESS_REQUIRED_BLINKS) {
-      livenessStatusRef.current = 'passed';
-      setLivenessStatus('passed');
-      setVideoStep('Prova de vida aprovada. Pronto para gravar.');
-    }
-  }, [calcEAR]);
+  }, [completeCurrentChallenge, computeMetrics]);
 
   const stopCamera = useCallback(() => {
     stopFaceDetection();
@@ -218,25 +418,22 @@ function Upload({ onImageUpload, onVideoUpload }) {
     setCameraReady(false);
     setFaceDetected(false);
     setIsRecording(false);
+
     livenessStatusRef.current = 'pending';
     setLivenessStatus('pending');
     setLivenessProgress(0);
-    setEarDebug({
-      ear: null,
-      baseline: null,
-      threshold: null,
-      closedFrames: 0,
-      blinks: 0,
-      isClosed: false,
-    });
-    blinkCountRef.current = 0;
-    eyeClosedFramesRef.current = 0;
-    eyeWasClosedRef.current = false;
-    eyeBaselineRef.current = 0.28;
+    setChallengeLabel('');
+    setChallengeHint('');
+    setChallengeStep({ index: 0, total: 0 });
+
     livenessStartRef.current = null;
+    challengesRef.current = [];
+    challengeIndexRef.current = 0;
+
+    resetChallengeInternals();
     stopRecordingTicker();
     setVideoStep('Camera desligada');
-  }, [stopFaceDetection, stopRecordingTicker]);
+  }, [resetChallengeInternals, stopFaceDetection, stopRecordingTicker]);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
@@ -333,7 +530,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
         detectorRef.current = mpDetector;
         setFaceValidationMode('mediapipe');
         resetLiveness('mediapipe');
-        setVideoStep('MediaPipe ativo. Aguarde e pisque os olhos.');
+        setVideoStep('MediaPipe ativo. Siga os desafios de prova de vida.');
       } catch {
         detectorRef.current = null;
         setFaceValidationMode('none');
@@ -462,11 +659,6 @@ function Upload({ onImageUpload, onVideoUpload }) {
     }
   }, [onImageUpload, targetModel]);
 
-  const detectorLabelMap = {
-    mediapipe: 'MediaPipe',
-    none: 'Backend',
-  };
-
   return (
     <div className="upload-container">
       <div className="mode-switch" role="tablist" aria-label="Modo de analise">
@@ -574,7 +766,9 @@ function Upload({ onImageUpload, onVideoUpload }) {
                 </span>
                 <div className={`liveness-box ${livenessStatus}`}>
                   <span className="liveness-title">
-                    Prova de vida: pisque os olhos uma vez
+                    {challengeStep.total > 0
+                      ? `Prova ${challengeStep.index}/${challengeStep.total}: ${challengeLabel}`
+                      : 'Prova de vida'}
                   </span>
                   <div className="liveness-progress">
                     <div className="liveness-progress-fill" style={{ width: `${livenessProgress}%` }} />
@@ -583,10 +777,10 @@ function Upload({ onImageUpload, onVideoUpload }) {
                     {livenessStatus === 'passed'
                       ? 'Aprovado'
                       : livenessStatus === 'timeout'
-                        ? 'Tempo excedido (tente piscar novamente)'
-                      : livenessStatus === 'unavailable'
-                        ? 'Indisponivel no navegador'
-                        : 'Pendente'}
+                        ? 'Tempo excedido (reative a camera)'
+                        : livenessStatus === 'unavailable'
+                          ? 'Indisponivel no navegador'
+                          : challengeHint || 'Pendente'}
                   </span>
                 </div>
                 <button
@@ -613,7 +807,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
             )}
 
             {faceValidationMode === 'mediapipe' && cameraReady && (
-              <p className="camera-note">Usando MediaPipe FaceMesh no navegador para pre-validacao de prova de vida.</p>
+              <p className="camera-note">Usando MediaPipe FaceMesh para prova de vida com desafios dinamicos.</p>
             )}
             {faceValidationMode === 'none' && cameraReady && (
               <p className="camera-note">Deteccao local indisponivel. Validacao de face ocorrera no backend.</p>
@@ -622,13 +816,14 @@ function Upload({ onImageUpload, onVideoUpload }) {
             <p className="camera-step">Etapa: {videoStep}</p>
             {cameraReady && (
               <div className="ear-debug">
-                <span className="ear-debug-title">DEBUG EAR</span>
+                <span className="ear-debug-title">DEBUG EAR/CHALLENGE</span>
                 <span>EAR: {earDebug.ear !== null ? earDebug.ear.toFixed(3) : '--'}</span>
                 <span>Baseline: {earDebug.baseline !== null ? earDebug.baseline.toFixed(3) : '--'}</span>
                 <span>Threshold: {earDebug.threshold !== null ? earDebug.threshold.toFixed(3) : '--'}</span>
-                <span>Fechado: {earDebug.isClosed ? 'sim' : 'nao'}</span>
                 <span>Frames fechados: {earDebug.closedFrames}</span>
                 <span>Blinks: {earDebug.blinks}</span>
+                <span>Face width: {earDebug.faceWidth !== null ? earDebug.faceWidth.toFixed(3) : '--'}</span>
+                <span>Smile score: {earDebug.smileScore !== null ? earDebug.smileScore.toFixed(3) : '--'}</span>
               </div>
             )}
           </div>

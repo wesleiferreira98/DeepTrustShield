@@ -10,3 +10,6 @@ pydantic-settings>=2.1.0
 pillow>=10.2.0
 python-dotenv>=1.0.0
 aiofiles>=23.2.1
+mediapipe>=0.10.14
+opencv-python-headless>=4.10.0.84
+numpy>=1.26.0
