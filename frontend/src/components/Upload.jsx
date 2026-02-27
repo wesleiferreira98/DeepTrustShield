@@ -9,8 +9,11 @@ const LIVENESS_TIMEOUT_MS = 12000;
 const BLINK_CLOSE_THRESHOLD_FACTOR = 0.82;
 const BLINK_MIN_CLOSED_FRAMES = 1;
 const DISTANCE_TARGET_RANGE_RATIO = 0.16;
-const SMILE_TARGET_FACTOR = 1.12;
-const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 2;
+const SMILE_TARGET_FACTOR = 1.08;
+const SMILE_MIN_ABS_DELTA = 0.025;
+const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 1;
+const MIN_CHALLENGES_PER_SESSION = 3;
+const MAX_CHALLENGES_PER_SESSION = 5;
 
 const SCRIPT_CACHE = {};
 
@@ -166,28 +169,48 @@ function Upload({ onImageUpload, onVideoUpload }) {
 
   const buildChallenges = useCallback(() => {
     const blinkTarget = Math.random() > 0.5 ? 2 : 1;
-    const base = [
+    const pool = [
       {
-        type: 'blink',
-        target: blinkTarget,
+        id: 'blink',
+        requirements: ['blink'],
         label: `Piscar ${blinkTarget}x`,
         hint: `Piscar ${blinkTarget} vez(es) de forma intencional.`,
+        targets: { blink: blinkTarget },
       },
       {
-        type: 'distance',
-        target: DISTANCE_TARGET_RANGE_RATIO,
+        id: 'distance',
+        requirements: ['distance'],
         label: 'Aproximar/Afastar',
         hint: 'Aproxime e afaste o rosto da camera.',
+        targets: { distance: DISTANCE_TARGET_RANGE_RATIO },
       },
       {
-        type: 'smile',
-        target: SMILE_TARGET_FACTOR,
+        id: 'smile',
+        requirements: ['smile'],
         label: 'Sorrir',
         hint: 'Sorria claramente por um instante.',
+        targets: { smile: SMILE_TARGET_FACTOR },
+      },
+      {
+        id: 'blink_smile',
+        requirements: ['blink', 'smile'],
+        label: `Piscar ${blinkTarget}x + Sorrir`,
+        hint: `Nesta prova combinada, pisque ${blinkTarget} vez(es) e sorria.`,
+        targets: { blink: blinkTarget, smile: SMILE_TARGET_FACTOR },
+      },
+      {
+        id: 'distance_smile',
+        requirements: ['distance', 'smile'],
+        label: 'Aproximar/Afastar + Sorrir',
+        hint: 'Aproxime/afaste o rosto e sorria na mesma prova.',
+        targets: { distance: DISTANCE_TARGET_RANGE_RATIO, smile: SMILE_TARGET_FACTOR },
       },
     ];
 
-    return shuffle(base);
+    const total = MIN_CHALLENGES_PER_SESSION
+      + Math.floor(Math.random() * (MAX_CHALLENGES_PER_SESSION - MIN_CHALLENGES_PER_SESSION + 1));
+
+    return shuffle(pool).slice(0, total);
   }, []);
 
   const resetLiveness = useCallback((detectorMode = faceValidationMode) => {
@@ -343,43 +366,55 @@ function Upload({ onImageUpload, onVideoUpload }) {
       return;
     }
 
-    let progress = 0;
+    const blinkTarget = currentChallenge.targets?.blink ?? 1;
+    const blinkProgress = Math.max(0, Math.min(100, (blinkCountRef.current / blinkTarget) * 100));
+    const blinkPassed = blinkCountRef.current >= blinkTarget;
 
-    if (currentChallenge.type === 'blink') {
-      progress = Math.max(0, Math.min(100, (blinkCountRef.current / currentChallenge.target) * 100));
-      setLivenessProgress(progress);
+    const distanceTarget = currentChallenge.targets?.distance ?? DISTANCE_TARGET_RANGE_RATIO;
+    const base = distanceBaselineRef.current || faceWidth;
+    const range = Math.max(0, (distanceMaxRef.current - distanceMinRef.current) / Math.max(base, 1e-4));
+    const distanceProgress = Math.max(0, Math.min(100, (range / distanceTarget) * 100));
+    const distancePassed = range >= distanceTarget;
 
-      if (blinkCountRef.current >= currentChallenge.target) {
-        completeCurrentChallenge();
-      }
+    const smileTarget = currentChallenge.targets?.smile ?? SMILE_TARGET_FACTOR;
+    const baseline = smileBaselineRef.current || smileScore;
+    const ratio = smileScore / Math.max(baseline, 1e-4);
+    const absDelta = smileScore - baseline;
+    const smilePassedFrame = ratio >= smileTarget || absDelta >= SMILE_MIN_ABS_DELTA;
+    if (smilePassedFrame) {
+      smileConsecutiveRef.current += 1;
+    } else {
+      smileConsecutiveRef.current = 0;
     }
+    const ratioProgress = ratio / smileTarget;
+    const deltaProgress = absDelta / SMILE_MIN_ABS_DELTA;
+    const smileProgress = Math.max(0, Math.min(100, Math.max(ratioProgress, deltaProgress) * 100));
+    const smilePassed = smileConsecutiveRef.current >= SMILE_CONSECUTIVE_FRAMES_REQUIRED;
 
-    if (currentChallenge.type === 'distance') {
-      const base = distanceBaselineRef.current || faceWidth;
-      const range = Math.max(0, (distanceMaxRef.current - distanceMinRef.current) / Math.max(base, 1e-4));
-      progress = Math.max(0, Math.min(100, (range / currentChallenge.target) * 100));
-      setLivenessProgress(progress);
+    const progressByType = {
+      blink: blinkProgress,
+      distance: distanceProgress,
+      smile: smileProgress,
+    };
+    const passedByType = {
+      blink: blinkPassed,
+      distance: distancePassed,
+      smile: smilePassed,
+    };
+    const required = Array.isArray(currentChallenge.requirements) ? currentChallenge.requirements : [];
+    const requirementProgress = required.map((key) => progressByType[key] ?? 0);
+    const combinedProgress = requirementProgress.length
+      ? requirementProgress.reduce((acc, value) => acc + value, 0) / requirementProgress.length
+      : 0;
 
-      if (range >= currentChallenge.target) {
-        completeCurrentChallenge();
-      }
-    }
+    setLivenessProgress(Math.max(0, Math.min(100, combinedProgress)));
 
-    if (currentChallenge.type === 'smile') {
-      const baseline = smileBaselineRef.current || smileScore;
-      const ratio = smileScore / Math.max(baseline, 1e-4);
-      if (ratio >= currentChallenge.target) {
-        smileConsecutiveRef.current += 1;
-      } else {
-        smileConsecutiveRef.current = 0;
-      }
+    const passed = required.length
+      ? required.every((key) => Boolean(passedByType[key]))
+      : false;
 
-      progress = Math.max(0, Math.min(100, (ratio / currentChallenge.target) * 100));
-      setLivenessProgress(progress);
-
-      if (smileConsecutiveRef.current >= SMILE_CONSECUTIVE_FRAMES_REQUIRED) {
-        completeCurrentChallenge();
-      }
+    if (passed) {
+      completeCurrentChallenge();
     }
 
     setEarDebug({
