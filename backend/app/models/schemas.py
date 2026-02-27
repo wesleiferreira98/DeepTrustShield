@@ -79,6 +79,8 @@ class ResultResponse(BaseModel):
     model_version: str
     created_at: datetime
     processing_time_ms: Optional[int] = None
+    video_summary: Optional[Dict[str, Any]] = None
+    frame_results: Optional[List[Dict[str, Any]]] = None
 
 
 class ErrorResponse(BaseModel):

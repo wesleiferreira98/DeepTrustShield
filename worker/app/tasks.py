@@ -3,6 +3,8 @@ import time
 import logging
 import traceback
 from datetime import datetime
+from statistics import median
+import math
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -45,7 +47,13 @@ def update_stage(db, job_id: str, stage: str, error_message: str = None):
     logger.info(f"[{job_id}] Stage: {stage}")
 
 
-def save_artifact(db, job_id: str, face_crop_path: str = None, bbox_json: str = None):
+def save_artifact(
+    db,
+    job_id: str,
+    face_crop_path: str = None,
+    bbox_json: str = None,
+    original_meta: str = None,
+):
     """Save artifact to database."""
     artifact = db.query(Artifact).filter(Artifact.job_id == job_id).first()
     if artifact:
@@ -53,11 +61,14 @@ def save_artifact(db, job_id: str, face_crop_path: str = None, bbox_json: str = 
             artifact.face_crop_path = face_crop_path
         if bbox_json:
             artifact.bbox_json = bbox_json
+        if original_meta:
+            artifact.original_meta = original_meta
     else:
         artifact = Artifact(
             job_id=job_id,
             face_crop_path=face_crop_path,
-            bbox_json=bbox_json
+            bbox_json=bbox_json,
+            original_meta=original_meta,
         )
         db.add(artifact)
     db.commit()
@@ -70,7 +81,7 @@ def save_result(db, job_id: str, p_fake: float, risk_level: str, flags: dict, mo
         p_fake=p_fake,
         risk_level=risk_level,
         flags_json=json.dumps(flags),
-        model_version=model_version or config.MODEL_VERSION
+        model_version=model_version or config.MODEL_VERSION,
     )
     db.add(result)
     db.commit()
@@ -78,44 +89,42 @@ def save_result(db, job_id: str, p_fake: float, risk_level: str, flags: dict, mo
 
 def calculate_risk_level(p_fake: float, flags: dict) -> str:
     """Calculate risk level based on score and flags."""
-    # Só retorna undetermined se não há face (múltiplas faces ainda são processadas)
     if flags.get("no_face"):
         return "undetermined"
-    
-    # p_fake None significa que não houve inferência
+
     if p_fake is None:
         return "undetermined"
-    
+
     if p_fake < config.THRESHOLD_LOW:
         return "low"
-    elif p_fake < config.THRESHOLD_HIGH:
+    if p_fake < config.THRESHOLD_HIGH:
         return "medium"
-    else:
-        return "high"
+    return "high"
 
 
-def process_deepfake_image(job_id: str, image_path: str, target_model: str = "auto"):
-    """Main pipeline for deepfake detection."""
-    db = get_db()
-    start_time = time.time()
-    
-    flags = {
+def _default_flags() -> dict:
+    return {
         "no_face": False,
         "multiple_faces": False,
         "blur_high": False,
         "low_light": False,
-        "face_too_small": False
+        "face_too_small": False,
     }
-    
+
+
+def process_deepfake_image(job_id: str, image_path: str, target_model: str = "auto"):
+    """Main pipeline for deepfake detection from one image."""
+    db = get_db()
+    start_time = time.time()
+    flags = _default_flags()
+
     try:
-        # Stage 1: Validating image
         update_stage(db, job_id, "validating_image")
-        time.sleep(0.3)  # Simulated processing time for UX
-        
-        # Stage 2: Detecting face
+        time.sleep(0.3)
+
         update_stage(db, job_id, "detecting_face")
         faces = detect_faces(image_path)
-        
+
         if len(faces) == 0:
             flags["no_face"] = True
             logger.warning(f"[{job_id}] No face detected")
@@ -123,72 +132,262 @@ def process_deepfake_image(job_id: str, image_path: str, target_model: str = "au
             save_result(db, job_id, None, "undetermined", flags, model_version=target_model)
             update_stage(db, job_id, "done")
             return
-        
+
         if len(faces) > 1:
             flags["multiple_faces"] = True
             logger.warning(f"[{job_id}] Multiple faces detected: {len(faces)}")
-            # Use the largest face
             faces = [max(faces, key=lambda f: f["width"] * f["height"])]
-        
+
         face = faces[0]
-        # Usar porcentagens para posicionamento correto no frontend
         bbox = {
             "x": face.get("x_pct", 0),
             "y": face.get("y_pct", 0),
             "width": face.get("width_pct", 100),
-            "height": face.get("height_pct", 100)
+            "height": face.get("height_pct", 100),
         }
-        
-        # Save bbox artifact early for preview
         save_artifact(db, job_id, bbox_json=json.dumps(bbox))
-        
-        # Stage 3: Quality checks
+
         update_stage(db, job_id, "quality_checks")
         quality = check_quality(image_path, face)
-        
+
         if quality["blur_score"] < config.BLUR_THRESHOLD:
             flags["blur_high"] = True
         if quality["brightness"] < config.BRIGHTNESS_MIN or quality["brightness"] > config.BRIGHTNESS_MAX:
             flags["low_light"] = True
         if face["width"] < config.MIN_FACE_SIZE or face["height"] < config.MIN_FACE_SIZE:
             flags["face_too_small"] = True
-        
-        # Stage 4: Preprocessing
+
         update_stage(db, job_id, "preprocessing")
         face_crop_path, face_tensor = preprocess_face(image_path, face, job_id, config.ARTIFACTS_PATH)
-        
-        # Update artifact with face crop
         save_artifact(db, job_id, face_crop_path=face_crop_path)
-        
-        # Stage 5: Model inference
+
         update_stage(db, job_id, "model_inference")
         p_fake = run_inference(face_tensor, config.MODEL_PATH, target_model=target_model)
-        
-        # Stage 6: Calibrating score
+
         update_stage(db, job_id, "calibrating_score")
         risk_level = calculate_risk_level(p_fake, flags)
-        
-        # Stage 7: Generating evidence
+
         update_stage(db, job_id, "generating_evidence")
-        time.sleep(0.2)  # Evidence already saved
-        
-        # Save final result
-        loaded_model_version = get_loaded_model_version()
-        save_result(db, job_id, p_fake, risk_level, flags, model_version=loaded_model_version)
-        
-        # Done
+        time.sleep(0.2)
+
+        model_version = get_loaded_model_version()
+        save_result(db, job_id, p_fake, risk_level, flags, model_version=model_version)
+
         update_stage(db, job_id, "done")
-        
+
         elapsed = time.time() - start_time
         logger.info(f"[{job_id}] Completed in {elapsed:.2f}s - p_fake: {p_fake:.4f}, risk: {risk_level}")
-        
+
     except Exception as e:
         logger.error(f"[{job_id}] Error: {str(e)}")
         logger.error(traceback.format_exc())
         update_stage(db, job_id, "error", str(e))
-        
-        # Save partial result
         save_result(db, job_id, None, "undetermined", flags, model_version="unknown")
-        
+
+    finally:
+        db.close()
+
+
+def process_deepfake_video_frames(job_id: str, frame_paths: list[str], target_model: str = "auto"):
+    """Process a short video represented by extracted image frames."""
+    db = get_db()
+    start_time = time.time()
+    flags = _default_flags()
+
+    try:
+        update_stage(db, job_id, "validating_image")
+        if not frame_paths:
+            raise ValueError("Nenhum frame recebido para análise")
+
+        valid_paths = [p for p in frame_paths if p]
+        if not valid_paths:
+            raise ValueError("Nenhum frame válido recebido")
+
+        update_stage(db, job_id, "detecting_face")
+        frame_candidates = []
+        representative_bbox = None
+
+        for idx, frame_path in enumerate(valid_paths):
+            faces = detect_faces(frame_path)
+            if len(faces) == 0:
+                continue
+
+            if len(faces) > 1:
+                flags["multiple_faces"] = True
+                faces = [max(faces, key=lambda f: f["width"] * f["height"])]
+
+            face = faces[0]
+            bbox = {
+                "x": face.get("x_pct", 0),
+                "y": face.get("y_pct", 0),
+                "width": face.get("width_pct", 100),
+                "height": face.get("height_pct", 100),
+            }
+            if representative_bbox is None:
+                representative_bbox = bbox
+
+            frame_candidates.append({
+                "index": idx,
+                "path": frame_path,
+                "face": face,
+                "bbox": bbox,
+            })
+
+        if not frame_candidates:
+            flags["no_face"] = True
+            save_artifact(
+                db,
+                job_id,
+                original_meta=json.dumps({
+                    "video_summary": {
+                        "total_frames": len(valid_paths),
+                        "valid_frames": 0,
+                        "p_fake_mean": None,
+                        "p_fake_median": None,
+                        "p_fake_max": None,
+                    },
+                    "frame_results": [],
+                }),
+            )
+            save_result(db, job_id, None, "undetermined", flags, model_version=target_model)
+            update_stage(db, job_id, "done")
+            return
+
+        if representative_bbox:
+            save_artifact(db, job_id, bbox_json=json.dumps(representative_bbox))
+
+        update_stage(db, job_id, "quality_checks")
+        quality_pass = []
+        for candidate in frame_candidates:
+            quality = check_quality(candidate["path"], candidate["face"])
+
+            blur_high = quality["blur_score"] < config.BLUR_THRESHOLD
+            low_light = (
+                quality["brightness"] < config.BRIGHTNESS_MIN or
+                quality["brightness"] > config.BRIGHTNESS_MAX
+            )
+            face_too_small = (
+                candidate["face"]["width"] < config.MIN_FACE_SIZE or
+                candidate["face"]["height"] < config.MIN_FACE_SIZE
+            )
+
+            flags["blur_high"] = flags["blur_high"] or blur_high
+            flags["low_light"] = flags["low_light"] or low_light
+            flags["face_too_small"] = flags["face_too_small"] or face_too_small
+
+            quality_pass.append({
+                **candidate,
+                "quality": {
+                    "blur_high": blur_high,
+                    "low_light": low_light,
+                    "face_too_small": face_too_small,
+                },
+            })
+
+        update_stage(db, job_id, "preprocessing")
+        prepared_frames = []
+        representative_face_crop = None
+
+        for candidate in quality_pass:
+            face_crop_path, face_tensor = preprocess_face(
+                candidate["path"],
+                candidate["face"],
+                job_id,
+                config.ARTIFACTS_PATH,
+            )
+            if representative_face_crop is None:
+                representative_face_crop = face_crop_path
+            prepared_frames.append({
+                **candidate,
+                "face_tensor": face_tensor,
+                "face_crop_path": face_crop_path,
+            })
+
+        if representative_face_crop:
+            save_artifact(db, job_id, face_crop_path=representative_face_crop)
+
+        update_stage(db, job_id, "model_inference")
+        frame_scores = []
+        frame_results = []
+
+        for prepared in prepared_frames:
+            p_fake_frame = run_inference(prepared["face_tensor"], config.MODEL_PATH, target_model=target_model)
+            frame_scores.append(p_fake_frame)
+            frame_results.append({
+                "index": prepared["index"],
+                "p_fake": p_fake_frame,
+                "quality": prepared["quality"],
+            })
+
+        update_stage(db, job_id, "calibrating_score")
+        p_fake_mean = sum(frame_scores) / len(frame_scores) if frame_scores else None
+        p_fake_median = median(frame_scores) if frame_scores else None
+        p_fake_max = max(frame_scores) if frame_scores else None
+
+        high_frame_count = 0
+        suspicious_frame_count = 0
+        if frame_scores:
+            high_frame_count = sum(1 for score in frame_scores if score >= config.THRESHOLD_HIGH)
+            suspicious_frame_count = sum(1 for score in frame_scores if score >= config.THRESHOLD_LOW)
+
+        p_fake = None
+        if p_fake_mean is not None and p_fake_median is not None and p_fake_max is not None:
+            # Aggregation robusta contra outliers: prioriza mediana + média.
+            p_fake = (p_fake_median * 0.6) + (p_fake_mean * 0.4)
+
+            # Evita falso positivo por um único frame extremo.
+            if high_frame_count < 2:
+                p_fake = min(p_fake, config.THRESHOLD_HIGH - 0.001)
+
+            min_suspicious_frames = max(2, math.ceil(len(frame_scores) * 0.4))
+            if suspicious_frame_count < min_suspicious_frames:
+                p_fake = min(p_fake, config.THRESHOLD_LOW - 0.001)
+
+        if frame_scores:
+            flags["no_face"] = False
+        risk_level = calculate_risk_level(p_fake, flags)
+
+        update_stage(db, job_id, "generating_evidence")
+
+        summary = {
+            "total_frames": len(valid_paths),
+            "valid_frames": len(frame_scores),
+            "p_fake_mean": p_fake_mean,
+            "p_fake_median": p_fake_median,
+            "p_fake_max": p_fake_max,
+            "high_frame_count": high_frame_count,
+            "suspicious_frame_count": suspicious_frame_count,
+        }
+        save_artifact(
+            db,
+            job_id,
+            original_meta=json.dumps({
+                "video_summary": summary,
+                "frame_results": frame_results,
+            }),
+        )
+
+        model_version = get_loaded_model_version() if frame_scores else target_model
+        save_result(db, job_id, p_fake, risk_level, flags, model_version=model_version)
+
+        update_stage(db, job_id, "done")
+
+        elapsed = time.time() - start_time
+        logger.info(
+            "[%s] Video completed in %.2fs - frames: %d/%d, p_fake: %s, risk: %s",
+            job_id,
+            elapsed,
+            len(frame_scores),
+            len(valid_paths),
+            f"{p_fake:.4f}" if p_fake is not None else "None",
+            risk_level,
+        )
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Video error: {str(e)}")
+        logger.error(traceback.format_exc())
+        update_stage(db, job_id, "error", str(e))
+        save_result(db, job_id, None, "undetermined", flags, model_version="unknown")
+
     finally:
         db.close()

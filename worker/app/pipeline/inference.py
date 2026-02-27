@@ -14,6 +14,7 @@ _best_threshold = 0.5  # Pode ser sobrescrito pelo checkpoint
 _loaded_model_name = None
 _loaded_weights_path = None
 _loaded_model_version = None
+_loaded_target_model = None
 
 
 def get_device():
@@ -252,10 +253,15 @@ def load_model(model_path: str, target_model: str = "auto"):
     - efficientnet_b0_deepfake_v1.pth (trained checkpoint from Colab)
     - efficientnet_b0_deepfake.pth (legacy format)
     """
-    global _model, _best_threshold, _loaded_model_name, _loaded_weights_path, _loaded_model_version
+    global _model, _best_threshold, _loaded_model_name, _loaded_weights_path, _loaded_model_version, _loaded_target_model
     
     # Reuse cache only if loaded model already matches requested target
-    if _model is not None and (target_model == "auto" or _loaded_model_name == target_model):
+    if _model is not None and (
+        target_model == "auto" or
+        _loaded_target_model == target_model or
+        _loaded_model_name == target_model or
+        _loaded_model_version == target_model
+    ):
         return _model
     
     device = get_device()
@@ -307,6 +313,7 @@ def load_model(model_path: str, target_model: str = "auto"):
             _loaded_model_name = model_name
             _loaded_weights_path = weights_path
             _loaded_model_version = _infer_model_version(model_name, weights_path)
+            _loaded_target_model = target_model
             weights_loaded = True
             break
         except Exception as e:

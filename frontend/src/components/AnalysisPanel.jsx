@@ -1,7 +1,7 @@
 import { Loader2, Check, Circle, AlertCircle } from 'lucide-react';
 import './AnalysisPanel.css';
 
-function AnalysisPanel({ status, previewUrl, isUploading }) {
+function AnalysisPanel({ status, previewUrl, isUploading, analysisMode = 'image' }) {
   const steps = status?.steps || [
     { id: 'validating_image', label: 'Validando imagem', state: 'pending' },
     { id: 'detecting_face', label: 'Detectando face', state: 'pending' },
@@ -48,9 +48,13 @@ function AnalysisPanel({ status, previewUrl, isUploading }) {
 
       <div className="analysis-panel">
         <div className="panel-header">
-          <h2>Analisando imagem...</h2>
+          <h2>{analysisMode === 'video' ? 'Analisando video curto...' : 'Analisando imagem...'}</h2>
           <p className="status-message">
-            {isUploading ? 'Enviando arquivo...' : status?.message || 'Processando...'}
+            {isUploading
+              ? analysisMode === 'video'
+                ? 'Enviando frames do video...'
+                : 'Enviando arquivo...'
+              : status?.message || 'Processando...'}
           </p>
         </div>
 
