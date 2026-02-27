@@ -205,6 +205,13 @@ function Upload({ onImageUpload, onVideoUpload }) {
         hint: 'Aproxime/afaste o rosto e sorria na mesma prova.',
         targets: { distance: DISTANCE_TARGET_RANGE_RATIO, smile: SMILE_TARGET_FACTOR },
       },
+      {
+        id: 'blink_distance',
+        requirements: ['blink', 'distance'],
+        label: `Piscar ${blinkTarget}x + Aproximar/Afastar`,
+        hint: `Pisque ${blinkTarget} vez(es) e aproxime/afaste o rosto na mesma prova.`,
+        targets: { blink: blinkTarget, distance: DISTANCE_TARGET_RANGE_RATIO },
+      },
     ];
 
     const total = MIN_CHALLENGES_PER_SESSION
