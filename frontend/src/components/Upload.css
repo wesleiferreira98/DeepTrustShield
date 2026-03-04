@@ -213,6 +213,7 @@
   aspect-ratio: 16 / 9;
   display: block;
   object-fit: cover;
+  transform: scaleX(-1);
 }
 
 .camera-placeholder {
@@ -247,33 +248,61 @@
 
 .liveness-box {
   border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 10px;
-  background: var(--color-bg-secondary);
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0.2));
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .liveness-box.pending {
-  border-color: rgba(234, 179, 8, 0.45);
+  border-color: rgba(234, 179, 8, 0.65);
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.18) inset;
 }
 
 .liveness-box.passed {
-  border-color: rgba(34, 197, 94, 0.45);
+  border-color: rgba(34, 197, 94, 0.75);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.18) inset;
 }
 
 .liveness-box.unavailable {
   border-color: rgba(148, 163, 184, 0.45);
 }
 
+.liveness-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .liveness-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.liveness-step-badge {
   font-size: 12px;
-  color: var(--color-text-secondary);
+  font-weight: 700;
+  color: #fff;
+  background: rgba(59, 130, 246, 0.85);
+  border: 1px solid rgba(147, 197, 253, 0.7);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.liveness-challenge {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #f8fafc;
 }
 
 .liveness-progress {
-  height: 6px;
+  height: 10px;
   width: 100%;
   background: rgba(15, 23, 42, 0.25);
   border-radius: 999px;
@@ -286,9 +315,87 @@
   transition: width 0.2s ease;
 }
 
+.liveness-percent {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
 .liveness-status {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
+  color: #e2e8f0;
+}
+
+.liveness-checklist {
+  margin-top: 2px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.3);
+  padding-top: 8px;
+}
+
+.liveness-checklist-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.liveness-checklist ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.liveness-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #cbd5e1;
+  opacity: 0.8;
+}
+
+.liveness-checklist li.current {
+  color: #f8fafc;
+  opacity: 1;
+  font-weight: 700;
+}
+
+.liveness-checklist li.done {
+  color: #86efac;
+  opacity: 1;
+}
+
+.liveness-checklist .check-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  flex-shrink: 0;
+}
+
+.liveness-checklist li.current .check-icon {
+  border-color: rgba(251, 191, 36, 0.7);
+  color: #fde68a;
+}
+
+.liveness-checklist li.done .check-icon {
+  border-color: rgba(34, 197, 94, 0.7);
+  background: rgba(22, 163, 74, 0.3);
+  color: #bbf7d0;
 }
 
 .camera-note {
@@ -373,5 +480,9 @@
 @media (max-width: 640px) {
   .mode-switch {
     grid-template-columns: 1fr;
+  }
+
+  .liveness-challenge {
+    font-size: 15px;
   }
 }

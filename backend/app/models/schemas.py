@@ -86,3 +86,10 @@ class ResultResponse(BaseModel):
 class ErrorResponse(BaseModel):
     detail: str
     job_id: Optional[str] = None
+
+
+class LivenessAnalyzeResponse(BaseModel):
+    passed: bool
+    checks: Dict[str, Dict[str, Any]]
+    required_checks: Optional[List[str]] = None
+    summary: Dict[str, Any]

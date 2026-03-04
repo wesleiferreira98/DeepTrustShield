@@ -130,6 +130,8 @@ async def analyze_image(
             status_code=400,
             detail=f"Modelo alvo inválido. Use um de: {', '.join(sorted(ALLOWED_TARGET_MODELS))}"
         )
+
+    max_image_bytes = settings.max_image_upload_mb * 1024 * 1024
     
     # Generate job ID
     job_id = str(uuid.uuid4())
@@ -141,6 +143,13 @@ async def analyze_image(
     # Save original image
     original_path = os.path.join(job_dir, "original" + os.path.splitext(file.filename or ".jpg")[1])
     content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Arquivo de imagem vazio")
+    if len(content) > max_image_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Imagem excede o limite de {settings.max_image_upload_mb}MB",
+        )
     with open(original_path, "wb") as f:
         f.write(content)
     
@@ -255,6 +264,9 @@ async def get_artifact(job_id: str, name: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    if os.path.basename(name) != name or ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Nome de artefato inválido")
     
     file_path = os.path.join(settings.artifacts_path, job_id, name)
     if not os.path.exists(file_path):

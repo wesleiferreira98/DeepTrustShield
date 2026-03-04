@@ -4,7 +4,7 @@ import './Upload.css';
 
 const MAX_RECORDING_MS = 5000;
 const FRAME_COUNT = 7;
-const LIVENESS_TIMEOUT_MS = 12000;
+const LIVENESS_TIMEOUT_MS = 60000;
 
 const BLINK_CLOSE_THRESHOLD_FACTOR = 0.82;
 const BLINK_MIN_CLOSED_FRAMES = 1;
@@ -77,6 +77,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const [challengeLabel, setChallengeLabel] = useState('');
   const [challengeStep, setChallengeStep] = useState({ index: 0, total: 0 });
   const [challengeHint, setChallengeHint] = useState('');
+  const [challengeList, setChallengeList] = useState([]);
 
   const [earDebug, setEarDebug] = useState({
     ear: null,
@@ -229,12 +230,14 @@ function Upload({ onImageUpload, onVideoUpload }) {
       setChallengeStep({ index: 0, total: 0 });
       setChallengeLabel('Prova de vida indisponivel');
       setChallengeHint('Navegador sem suporte local.');
+      setChallengeList([]);
       setLivenessProgress(0);
       livenessStartRef.current = null;
       return;
     }
 
     challengesRef.current = buildChallenges();
+    setChallengeList(challengesRef.current.map((item) => item.label));
     challengeIndexRef.current = 0;
     livenessStartRef.current = Date.now();
     livenessStatusRef.current = 'pending';
@@ -467,6 +470,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     setChallengeLabel('');
     setChallengeHint('');
     setChallengeStep({ index: 0, total: 0 });
+    setChallengeList([]);
 
     livenessStartRef.current = null;
     challengesRef.current = [];
@@ -611,6 +615,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     const stepMs = Math.max(Math.floor(durationMs / count), 250);
 
     for (let i = 0; i < count; i += 1) {
+      // drawImage usa os pixels originais do stream (nao aplica transform CSS da preview).
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const frameBlob = await new Promise((resolve) => {
         canvas.toBlob(resolve, 'image/jpeg', 0.9);
@@ -807,14 +812,19 @@ function Upload({ onImageUpload, onVideoUpload }) {
                   {faceDetected ? 'Face detectada: pronto para gravar' : 'Aguardando face no enquadramento'}
                 </span>
                 <div className={`liveness-box ${livenessStatus}`}>
-                  <span className="liveness-title">
-                    {challengeStep.total > 0
-                      ? `Prova ${challengeStep.index}/${challengeStep.total}: ${challengeLabel}`
-                      : 'Prova de vida'}
-                  </span>
+                  <div className="liveness-header">
+                    <span className="liveness-title">Prova de vida</span>
+                    {challengeStep.total > 0 && (
+                      <span className="liveness-step-badge">{challengeStep.index}/{challengeStep.total}</span>
+                    )}
+                  </div>
+                  {challengeStep.total > 0 && (
+                    <p className="liveness-challenge">{challengeLabel}</p>
+                  )}
                   <div className="liveness-progress">
                     <div className="liveness-progress-fill" style={{ width: `${livenessProgress}%` }} />
                   </div>
+                  <span className="liveness-percent">{Math.round(livenessProgress)}%</span>
                   <span className="liveness-status">
                     {livenessStatus === 'passed'
                       ? 'Aprovado'
@@ -824,6 +834,26 @@ function Upload({ onImageUpload, onVideoUpload }) {
                           ? 'Indisponivel no navegador'
                           : challengeHint || 'Pendente'}
                   </span>
+                  {challengeList.length > 0 && (
+                    <div className="liveness-checklist">
+                      <span className="liveness-checklist-title">Checklist da prova</span>
+                      <ul>
+                        {challengeList.map((item, idx) => {
+                          const done = livenessStatus === 'passed' || idx < challengeIndexRef.current;
+                          const current = livenessStatus !== 'passed' && idx === challengeIndexRef.current;
+                          return (
+                            <li
+                              key={`${item}-${idx}`}
+                              className={`${done ? 'done' : ''} ${current ? 'current' : ''}`.trim()}
+                            >
+                              <span className="check-icon">{done ? 'OK' : current ? '>' : '...'}</span>
+                              <span className="check-label">{item}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"

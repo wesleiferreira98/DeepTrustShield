@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     
     # Model
     model_version: str = "efficientnet-b0-v1"
+
+    # Security
+    artifacts_retention_hours: int = 24
+    cleanup_interval_minutes: int = 60
+    max_image_upload_mb: int = 8
+    max_frame_upload_mb: int = 3
+    max_total_frames_upload_mb: int = 24
     
     class Config:
         env_file = ".env"

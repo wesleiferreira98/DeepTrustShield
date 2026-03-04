@@ -1,11 +1,19 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+from app.config import get_settings
+from app.models.schemas import LivenessAnalyzeResponse
 from app.services.liveness_service import analyze_liveness_frames
 
 router = APIRouter()
+settings = get_settings()
 
 
-@router.post('/analyze')
+@router.post(
+    '/analyze',
+    response_model=LivenessAnalyzeResponse,
+    summary='Analisar prova de vida por frames',
+    description='Recebe frames (imagens) e valida sinais de liveness como piscar, distancia e sorriso.',
+)
 async def analyze_liveness(
     frames: list[UploadFile] = File(...),
     required_checks: str = Form('blink,distance,smile'),
@@ -24,6 +32,9 @@ async def analyze_liveness(
         raise HTTPException(status_code=400, detail='Maximo de 20 frames por requisicao')
 
     allowed_types = {'image/jpeg', 'image/png', 'image/webp'}
+    max_frame_bytes = settings.max_frame_upload_mb * 1024 * 1024
+    max_total_bytes = settings.max_total_frames_upload_mb * 1024 * 1024
+    total_bytes = 0
     frame_bytes_list: list[bytes] = []
 
     for frame in frames:
@@ -35,6 +46,17 @@ async def analyze_liveness(
 
         content = await frame.read()
         if content:
+            if len(content) > max_frame_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Frame excede o limite de {settings.max_frame_upload_mb}MB",
+                )
+            total_bytes += len(content)
+            if total_bytes > max_total_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload total de frames excede {settings.max_total_frames_upload_mb}MB",
+                )
             frame_bytes_list.append(content)
 
     if not frame_bytes_list:

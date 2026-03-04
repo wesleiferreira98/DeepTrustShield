@@ -59,6 +59,9 @@ async def analyze_video_frames(
         raise HTTPException(status_code=400, detail="Máximo de 12 frames por análise")
 
     allowed_types = {"image/jpeg", "image/png", "image/webp"}
+    max_frame_bytes = settings.max_frame_upload_mb * 1024 * 1024
+    max_total_bytes = settings.max_total_frames_upload_mb * 1024 * 1024
+    total_bytes = 0
     job_id = str(uuid.uuid4())
 
     job_dir = os.path.join(settings.artifacts_path, job_id)
@@ -79,6 +82,17 @@ async def analyze_video_frames(
 
         if not content:
             continue
+        if len(content) > max_frame_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Frame excede o limite de {settings.max_frame_upload_mb}MB",
+            )
+        total_bytes += len(content)
+        if total_bytes > max_total_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload total de frames excede {settings.max_total_frames_upload_mb}MB",
+            )
 
         with open(frame_path, "wb") as output:
             output.write(content)
@@ -199,6 +213,9 @@ async def get_video_artifact(job_id: str, name: str, db: Session = Depends(get_d
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    if os.path.basename(name) != name or ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Nome de artefato inválido")
 
     file_path = os.path.join(settings.artifacts_path, job_id, name)
     if not os.path.exists(file_path):
