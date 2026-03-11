@@ -25,15 +25,30 @@ function loadScript(src) {
   SCRIPT_CACHE[src] = new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[src="${src}"]`);
     if (existing) {
-      resolve();
+      if (existing.dataset.loaded === 'true') {
+        resolve();
+        return;
+      }
+      if (existing.dataset.error === 'true') {
+        reject(new Error(`Falha ao carregar script: ${src}`));
+        return;
+      }
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error(`Falha ao carregar script: ${src}`)), { once: true });
       return;
     }
 
     const script = document.createElement('script');
     script.src = src;
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Falha ao carregar script: ${src}`));
+    script.onload = () => {
+      script.dataset.loaded = 'true';
+      resolve();
+    };
+    script.onerror = () => {
+      script.dataset.error = 'true';
+      reject(new Error(`Falha ao carregar script: ${src}`));
+    };
     document.head.appendChild(script);
   });
 
@@ -577,12 +592,13 @@ function Upload({ onImageUpload, onVideoUpload }) {
         setFaceValidationMode('mediapipe');
         resetLiveness('mediapipe');
         setVideoStep('MediaPipe ativo. Siga os desafios de prova de vida.');
-      } catch {
+      } catch (error) {
         detectorRef.current = null;
         setFaceValidationMode('none');
         setFaceDetected(true);
         resetLiveness('none');
-        setCameraError('Deteccao local indisponivel. Gravacao liberada sem pre-validacao.');
+        const message = error instanceof Error ? error.message : 'Erro desconhecido ao iniciar detector local';
+        setCameraError(`Deteccao local indisponivel (${message}). Gravacao liberada sem pre-validacao.`);
         setVideoStep('Sem detector local. Validacao ocorrera no backend.');
       }
 
