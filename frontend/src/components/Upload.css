@@ -56,6 +56,25 @@
   color: var(--color-text);
 }
 
+.inline-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.inline-toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.toggle-help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
 .upload-zone {
   background: var(--color-bg-card);
   border: 2px dashed var(--color-border);
@@ -401,6 +420,22 @@
 .camera-note {
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+.camera-note.backend-liveness.running {
+  color: #f59e0b;
+}
+
+.camera-note.backend-liveness.passed {
+  color: #22c55e;
+}
+
+.camera-note.backend-liveness.failed {
+  color: #ef4444;
+}
+
+.camera-note.backend-liveness.warning {
+  color: #f59e0b;
 }
 
 .camera-error {

@@ -1,7 +1,10 @@
+import json
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import ValidationError
 
 from app.config import get_settings
-from app.models.schemas import LivenessAnalyzeResponse
+from app.models.schemas import LivenessAnalyzeResponse, LivenessSessionDefinition
 from app.services.liveness_service import analyze_liveness_frames
 
 router = APIRouter()
@@ -17,6 +20,7 @@ settings = get_settings()
 async def analyze_liveness(
     frames: list[UploadFile] = File(...),
     required_checks: str = Form('blink,distance,smile'),
+    session_definition: str | None = Form(None),
 ):
     """Analyze liveness from extracted video frames.
 
@@ -63,9 +67,19 @@ async def analyze_liveness(
         raise HTTPException(status_code=400, detail='Nenhum frame valido recebido')
 
     checks = [c.strip().lower() for c in required_checks.split(',') if c.strip()]
+    parsed_session = None
+    if session_definition:
+        try:
+            parsed_session = LivenessSessionDefinition.model_validate(json.loads(session_definition))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=f'Session definition invalida: {str(exc)}') from exc
 
     try:
-        result = analyze_liveness_frames(frame_bytes_list, required_checks=checks)
+        result = analyze_liveness_frames(
+            frame_bytes_list,
+            required_checks=checks,
+            session_definition=parsed_session.model_dump() if parsed_session else None,
+        )
     except ImportError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

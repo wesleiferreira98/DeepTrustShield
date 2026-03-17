@@ -4,6 +4,8 @@
 
 O DeepTrustShield utiliza modelos de deep learning baseados em EfficientNet para detectar imagens manipuladas (deepfakes). Os notebooks de treinamento estão localizados em `notebooks/`.
 
+Para treino no Google Colab, o ideal e preparar o dataset localmente, subir para o Google Drive e manter o holdout de fairness separado do treino.
+
 ## Notebooks Disponíveis
 
 | Versão | Arquivo | Dataset | Características |
@@ -47,6 +49,112 @@ lfw_data = fetch_lfw_people(min_faces_per_person=1)
 - Estado da arte
 - Múltiplas técnicas: Deepfakes, Face2Face, FaceSwap, NeuralTextures
 - Requer solicitação de acesso
+
+---
+
+## Fluxo Recomendado Para Colab
+
+### 1. Preparar o dataset localmente
+
+Antes do split `train/val/test`, monte um `train_pool` balanceado por fonte.
+
+Use [build_training_pool.py](/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/scripts/build_training_pool.py) para combinar:
+
+- `FairFace`
+- capturas proprias
+- `FaceForensics++`
+- `Celeb-DF`
+- `DeeperForensics-1.0`
+- `DFDC`
+
+Exemplo:
+
+```bash
+python scripts/build_training_pool.py \
+  --output-root data/source/train_pool \
+  --real-source fairface=data/raw/fairface:8000 \
+  --real-source own_captures=data/raw/own_captures:8000 \
+  --real-source extracted_real=data/raw/extracted_real:4000 \
+  --fake-source faceforensicspp=data/raw/faceforensicspp:5000 \
+  --fake-source celebdf=data/raw/celebdf:5000 \
+  --fake-source deeperforensics=data/raw/deeperforensics:5000 \
+  --fake-source dfdc=data/raw/dfdc:5000 \
+  --clean
+```
+
+Isso gera:
+
+```text
+data/source/train_pool/
+  real/
+    fairface/
+    own_captures/
+    extracted_real/
+  fake/
+    faceforensicspp/
+    celebdf/
+    deeperforensics/
+    dfdc/
+  pool_manifest.csv
+```
+
+Use [prepare_colab_dataset.py](/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/scripts/prepare_colab_dataset.py) para montar o formato:
+
+```text
+dataset_colab/
+  train/
+    real/
+    fake/
+  val/
+    real/
+    fake/
+  test/
+    real/
+    fake/
+```
+
+Exemplo:
+
+```bash
+python scripts/prepare_colab_dataset.py \
+  --real-dir data/source/train_pool/real \
+  --fake-dir data/source/train_pool/fake \
+  --output-root data/dataset_colab \
+  --train-ratio 0.7 \
+  --val-ratio 0.15 \
+  --test-ratio 0.15 \
+  --seed 42
+```
+
+### 2. Subir para o Google Drive
+
+- compacte `data/dataset_colab/`
+- envie para o Drive
+- monte o Drive no Colab
+
+### 3. Treinar no Colab
+
+Para AlexNet, o notebook alvo hoje e:
+
+- `notebooks/train_deepfake_detector_v6.ipynb`
+
+Padrao de nome do peso final:
+
+- `alexnet_deepfake_v6.pth`
+
+Depois do treino, baixe o `.pth` e coloque em:
+
+```text
+model/weights/alexnet_deepfake_v6.pth
+```
+
+### 4. Auditar localmente
+
+O treino pode acontecer no Colab, mas a auditoria de vies deve ser rodada localmente com o mesmo holdout entre modelos.
+
+Consulte:
+
+- [FAIRNESS.md](/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/docs/FAIRNESS.md)
 
 ---
 

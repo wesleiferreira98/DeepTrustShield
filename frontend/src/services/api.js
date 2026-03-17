@@ -1,5 +1,6 @@
 const IMAGE_API_BASE = '/v1/deepfake/image';
 const VIDEO_API_BASE = '/v1/deepfake/video';
+const LIVENESS_API_BASE = '/v1/liveness';
 
 export async function analyzeImage(file, targetModel = 'auto') {
   const formData = new FormData();
@@ -34,6 +35,33 @@ export async function analyzeVideo(frames, targetModel = 'auto') {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Erro ao enviar frames de video');
+  }
+
+  return response.json();
+}
+
+export async function analyzeLiveness(frames, sessionDefinition = null, requiredChecks = []) {
+  const formData = new FormData();
+  frames.forEach((frame, index) => {
+    formData.append('frames', frame, frame.name || `frame_${index}.jpg`);
+  });
+
+  if (Array.isArray(requiredChecks) && requiredChecks.length > 0) {
+    formData.append('required_checks', requiredChecks.join(','));
+  }
+
+  if (sessionDefinition) {
+    formData.append('session_definition', JSON.stringify(sessionDefinition));
+  }
+
+  const response = await fetch(`${LIVENESS_API_BASE}/analyze`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erro ao analisar prova de vida');
   }
 
   return response.json();

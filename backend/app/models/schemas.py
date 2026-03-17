@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from enum import Enum
 from datetime import datetime
@@ -88,8 +88,47 @@ class ErrorResponse(BaseModel):
     job_id: Optional[str] = None
 
 
+class LivenessChallengeDefinition(BaseModel):
+    id: str
+    label: str
+    requirements: List[str] = Field(default_factory=list)
+    targets: Dict[str, float] = Field(default_factory=dict)
+    hint: Optional[str] = None
+
+
+class LivenessSessionDefinition(BaseModel):
+    session_id: Optional[str] = None
+    detector_mode: Optional[str] = None
+    challenges: List[LivenessChallengeDefinition] = Field(default_factory=list)
+
+
+class LivenessFrameMetrics(BaseModel):
+    frame_index: int
+    face_detected: bool
+    ear: Optional[float] = None
+    face_width: Optional[float] = None
+    smile_ratio: Optional[float] = None
+    mouth_open_ratio: Optional[float] = None
+    delta_ear: Optional[float] = None
+    delta_face_width: Optional[float] = None
+    delta_smile_ratio: Optional[float] = None
+    delta_mouth_open_ratio: Optional[float] = None
+    movement_score: Optional[float] = None
+
+
+class LivenessChallengeResult(BaseModel):
+    id: str
+    label: str
+    requirements: List[str] = Field(default_factory=list)
+    passed: bool
+    checks: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+
 class LivenessAnalyzeResponse(BaseModel):
     passed: bool
     checks: Dict[str, Dict[str, Any]]
     required_checks: Optional[List[str]] = None
     summary: Dict[str, Any]
+    session: Optional[LivenessSessionDefinition] = None
+    challenge_results: List[LivenessChallengeResult] = Field(default_factory=list)
+    frame_metrics: List[LivenessFrameMetrics] = Field(default_factory=list)

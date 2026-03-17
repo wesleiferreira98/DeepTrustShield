@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     
     # Artifacts (uses parent directory)
     artifacts_path: str = f"{BASE_DIR}/artifacts"
+
+    # MediaPipe tasks model asset for backend liveness
+    mediapipe_face_landmarker_path: str = f"{BASE_DIR}/backend/models/face_landmarker_v2.task"
     
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"

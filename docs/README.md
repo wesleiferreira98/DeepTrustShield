@@ -11,6 +11,7 @@ Sistema de detecção de deepfake em imagens usando deep learning.
 | [⚙️ WORKER.md](WORKER.md) | Pipeline de processamento, detecção facial e inferência |
 | [🎓 TRAINING.md](TRAINING.md) | Notebooks de treinamento, datasets e metodologia |
 | [📡 API.md](API.md) | Referência completa da API REST com exemplos |
+| [⚖️ FAIRNESS.md](FAIRNESS.md) | Auditoria de viés, fairness e protocolo de avaliação por grupo |
 
 ## Quick Start
 

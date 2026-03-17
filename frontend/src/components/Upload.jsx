@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Image, Upload as UploadIcon, Video } from 'lucide-react';
+import { analyzeLiveness } from '../services/api';
 import './Upload.css';
 
 const MAX_RECORDING_MS = 5000;
 const FRAME_COUNT = 7;
-const LIVENESS_TIMEOUT_MS = 60000;
+const LIVENESS_TIMEOUT_MS = 40000;
 
-const BLINK_CLOSE_THRESHOLD_FACTOR = 0.82;
-const BLINK_MIN_CLOSED_FRAMES = 1;
+const BLINK_CLOSE_THRESHOLD_FACTOR = 0.85;
+const BLINK_MIN_CLOSED_FRAMES = 2;
+const BLINK_REOPEN_THRESHOLD_FACTOR = 0.93;
+const BLINK_MIN_DEPTH_FACTOR = 0.95;
+const BLINK_MAX_FACE_WIDTH_VARIATION_RATIO = 0.12;
 const DISTANCE_TARGET_RANGE_RATIO = 0.16;
-const SMILE_TARGET_FACTOR = 1.08;
-const SMILE_MIN_ABS_DELTA = 0.025;
-const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 1;
+const SMILE_TARGET_FACTOR = 1.18;
+const SMILE_MIN_ABS_DELTA = 0.055;
+const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 2;
+const SMILE_INTERMEDIATE_FACTOR = 1.09;
+const SMILE_BASELINE_UPDATE_MAX_RATIO = 1.015;
+const SMILE_HOLD_CONSECUTIVE_FRAMES_REQUIRED = 4;
+const MOUTH_OPEN_TARGET_FACTOR = 1.46;
+const MOUTH_OPEN_INTERMEDIATE_FACTOR = 1.24;
+const MOUTH_OPEN_MIN_ABS_DELTA = 0.065;
+const MOUTH_OPEN_CONSECUTIVE_FRAMES_REQUIRED = 2;
+const MIXED_DISTANCE_PROGRESS_WEIGHT = 0.18;
+const MIXED_BLINK_PROGRESS_WEIGHT = 1.25;
+const MIXED_SMILE_PROGRESS_WEIGHT = 1.15;
 const MIN_CHALLENGES_PER_SESSION = 3;
 const MAX_CHALLENGES_PER_SESSION = 5;
 
@@ -73,6 +87,30 @@ function shuffle(items) {
   return arr;
 }
 
+function pickWeightedChallenges(pool, total) {
+  const available = pool.map((item) => ({ ...item }));
+  const selected = [];
+
+  while (available.length > 0 && selected.length < total) {
+    const totalWeight = available.reduce((sum, item) => sum + (item.weight ?? 1), 0);
+    let ticket = Math.random() * totalWeight;
+    let chosenIndex = 0;
+
+    for (let i = 0; i < available.length; i += 1) {
+      ticket -= available[i].weight ?? 1;
+      if (ticket <= 0) {
+        chosenIndex = i;
+        break;
+      }
+    }
+
+    selected.push(available[chosenIndex]);
+    available.splice(chosenIndex, 1);
+  }
+
+  return shuffle(selected);
+}
+
 function Upload({ onImageUpload, onVideoUpload }) {
   const [mode, setMode] = useState('image');
   const [isDragging, setIsDragging] = useState(false);
@@ -86,6 +124,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const [recordingMsLeft, setRecordingMsLeft] = useState(MAX_RECORDING_MS);
   const [faceDetected, setFaceDetected] = useState(false);
   const [faceValidationMode, setFaceValidationMode] = useState('none');
+  const [useBackendLiveness, setUseBackendLiveness] = useState(true);
+  const [backendLivenessStatus, setBackendLivenessStatus] = useState('idle');
 
   const [livenessStatus, setLivenessStatus] = useState('pending'); // pending | passed | timeout | unavailable
   const [livenessProgress, setLivenessProgress] = useState(0);
@@ -102,6 +142,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     blinks: 0,
     faceWidth: null,
     smileScore: null,
+    mouthOpenScore: null,
   });
 
   const videoRef = useRef(null);
@@ -120,15 +161,34 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const eyeClosedFramesRef = useRef(0);
   const eyeWasClosedRef = useRef(false);
   const eyeBaselineRef = useRef(0.28);
+  const blinkMinEarRef = useRef(null);
+  const blinkStartFaceWidthRef = useRef(null);
 
   const distanceMinRef = useRef(null);
   const distanceMaxRef = useRef(null);
   const distanceBaselineRef = useRef(null);
 
   const smileBaselineRef = useRef(null);
+  const smileIntermediateReachedRef = useRef(false);
+  const smilePeakRatioRef = useRef(1);
   const smileConsecutiveRef = useRef(0);
+  const mouthOpenBaselineRef = useRef(null);
+  const mouthOpenIntermediateReachedRef = useRef(false);
+  const mouthOpenPeakRatioRef = useRef(1);
+  const mouthOpenConsecutiveRef = useRef(0);
 
   const detectorLabelMap = useMemo(() => ({ mediapipe: 'MediaPipe', none: 'Backend' }), []);
+
+  const buildBackendLivenessSession = useCallback(() => ({
+    detector_mode: faceValidationMode,
+    challenges: challengesRef.current.map((challenge) => ({
+      id: challenge.id,
+      label: challenge.label,
+      hint: challenge.hint,
+      requirements: Array.isArray(challenge.requirements) ? challenge.requirements : [],
+      targets: challenge.targets || {},
+    })),
+  }), [faceValidationMode]);
 
   const stopFaceDetection = useCallback(() => {
     if (detectorIntervalRef.current) {
@@ -151,13 +211,21 @@ function Upload({ onImageUpload, onVideoUpload }) {
     eyeClosedFramesRef.current = 0;
     eyeWasClosedRef.current = false;
     eyeBaselineRef.current = 0.28;
+    blinkMinEarRef.current = null;
+    blinkStartFaceWidthRef.current = null;
 
     distanceMinRef.current = null;
     distanceMaxRef.current = null;
     distanceBaselineRef.current = null;
 
     smileBaselineRef.current = null;
+    smileIntermediateReachedRef.current = false;
+    smilePeakRatioRef.current = 1;
     smileConsecutiveRef.current = 0;
+    mouthOpenBaselineRef.current = null;
+    mouthOpenIntermediateReachedRef.current = false;
+    mouthOpenPeakRatioRef.current = 1;
+    mouthOpenConsecutiveRef.current = 0;
 
     setEarDebug({
       ear: null,
@@ -167,6 +235,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
       blinks: 0,
       faceWidth: null,
       smileScore: null,
+      mouthOpenScore: null,
     });
   }, []);
 
@@ -190,50 +259,72 @@ function Upload({ onImageUpload, onVideoUpload }) {
         id: 'blink',
         requirements: ['blink'],
         label: `Piscar ${blinkTarget}x`,
-        hint: `Piscar ${blinkTarget} vez(es) de forma intencional.`,
+        hint: `Olhe diretamente para a camera e pisque ${blinkTarget} vez(es) pausadamente.`,
         targets: { blink: blinkTarget },
+        weight: 1.35,
       },
       {
         id: 'distance',
         requirements: ['distance'],
         label: 'Aproximar/Afastar',
-        hint: 'Aproxime e afaste o rosto da camera.',
+        hint: 'Aproxime e afaste o rosto lentamente, mantendo os olhos na camera.',
         targets: { distance: DISTANCE_TARGET_RANGE_RATIO },
+        weight: 0.55,
+      },
+      {
+        id: 'mouth_open',
+        requirements: ['mouth_open'],
+        label: 'Abrir a boca',
+        hint: 'Olhe para a camera e abra a boca gradualmente ate ficar bem visivel.',
+        targets: { mouth_open: MOUTH_OPEN_TARGET_FACTOR },
+        weight: 1.05,
       },
       {
         id: 'smile',
         requirements: ['smile'],
         label: 'Sorrir',
-        hint: 'Sorria claramente por um instante.',
+        hint: 'Olhe para a camera e sorria de forma natural por um instante.',
         targets: { smile: SMILE_TARGET_FACTOR },
+        weight: 1.15,
+      },
+      {
+        id: 'smile_hold',
+        requirements: ['smile_hold'],
+        label: 'Sorrir e segurar',
+        hint: 'Olhe para a camera, sorria claramente e segure por um instante.',
+        targets: { smile_hold: SMILE_TARGET_FACTOR },
+        weight: 1.05,
       },
       {
         id: 'blink_smile',
         requirements: ['blink', 'smile'],
         label: `Piscar ${blinkTarget}x + Sorrir`,
-        hint: `Nesta prova combinada, pisque ${blinkTarget} vez(es) e sorria.`,
+        hint: `Olhando para a camera, pisque ${blinkTarget} vez(es) pausadamente e sorria.`,
         targets: { blink: blinkTarget, smile: SMILE_TARGET_FACTOR },
+        weight: 1.2,
       },
       {
         id: 'distance_smile',
         requirements: ['distance', 'smile'],
         label: 'Aproximar/Afastar + Sorrir',
-        hint: 'Aproxime/afaste o rosto e sorria na mesma prova.',
+        hint: 'Aproxime/afaste o rosto devagar e sorria olhando para a camera.',
         targets: { distance: DISTANCE_TARGET_RANGE_RATIO, smile: SMILE_TARGET_FACTOR },
+        weight: 0.7,
       },
       {
         id: 'blink_distance',
         requirements: ['blink', 'distance'],
         label: `Piscar ${blinkTarget}x + Aproximar/Afastar`,
-        hint: `Pisque ${blinkTarget} vez(es) e aproxime/afaste o rosto na mesma prova.`,
+        hint: `Olhando para a camera, pisque ${blinkTarget} vez(es) pausadamente e aproxime/afaste o rosto devagar.`,
         targets: { blink: blinkTarget, distance: DISTANCE_TARGET_RANGE_RATIO },
+        weight: 0.75,
       },
     ];
 
     const total = MIN_CHALLENGES_PER_SESSION
       + Math.floor(Math.random() * (MAX_CHALLENGES_PER_SESSION - MIN_CHALLENGES_PER_SESSION + 1));
 
-    return shuffle(pool).slice(0, total);
+    return pickWeightedChallenges(pool, total);
   }, []);
 
   const resetLiveness = useCallback((detectorMode = faceValidationMode) => {
@@ -312,8 +403,11 @@ function Upload({ onImageUpload, onVideoUpload }) {
     const mouthRight = landmarks[291];
     const mouthWidth = toDistance(mouthLeft, mouthRight);
     const smileScore = mouthWidth / eyeDist;
+    const upperLip = landmarks[13];
+    const lowerLip = landmarks[14];
+    const mouthOpenScore = toDistance(upperLip, lowerLip) / eyeDist;
 
-    return { ear, faceWidth, smileScore };
+    return { ear, faceWidth, smileScore, mouthOpenScore };
   }, [calcEAR, toDistance]);
 
   const completeCurrentChallenge = useCallback(() => {
@@ -351,24 +445,46 @@ function Upload({ onImageUpload, onVideoUpload }) {
       return;
     }
 
-    const { ear, faceWidth, smileScore } = metrics;
+    const { ear, faceWidth, smileScore, mouthOpenScore } = metrics;
 
     if (ear > 0.18) {
       eyeBaselineRef.current = (eyeBaselineRef.current * 0.9) + (ear * 0.1);
     }
 
     const closeThreshold = eyeBaselineRef.current * BLINK_CLOSE_THRESHOLD_FACTOR;
+    const reopenThreshold = eyeBaselineRef.current * BLINK_REOPEN_THRESHOLD_FACTOR;
     const isClosed = ear < closeThreshold;
 
     if (isClosed) {
+      if (!eyeWasClosedRef.current) {
+        blinkStartFaceWidthRef.current = faceWidth;
+        blinkMinEarRef.current = ear;
+      } else if (blinkMinEarRef.current === null || ear < blinkMinEarRef.current) {
+        blinkMinEarRef.current = ear;
+      }
       eyeClosedFramesRef.current += 1;
       eyeWasClosedRef.current = true;
     } else {
-      if (eyeWasClosedRef.current && eyeClosedFramesRef.current >= BLINK_MIN_CLOSED_FRAMES) {
+      const blinkDepthOk = blinkMinEarRef.current !== null
+        && blinkMinEarRef.current <= closeThreshold * BLINK_MIN_DEPTH_FACTOR;
+      const blinkReopenOk = ear >= reopenThreshold;
+      const startFaceWidth = blinkStartFaceWidthRef.current ?? faceWidth;
+      const faceWidthVariation = Math.abs(faceWidth - startFaceWidth) / Math.max(startFaceWidth, 1e-4);
+      const blinkStableEnough = faceWidthVariation <= BLINK_MAX_FACE_WIDTH_VARIATION_RATIO;
+
+      if (
+        eyeWasClosedRef.current
+        && eyeClosedFramesRef.current >= BLINK_MIN_CLOSED_FRAMES
+        && blinkDepthOk
+        && blinkReopenOk
+        && blinkStableEnough
+      ) {
         blinkCountRef.current += 1;
       }
       eyeWasClosedRef.current = false;
       eyeClosedFramesRef.current = 0;
+      blinkMinEarRef.current = null;
+      blinkStartFaceWidthRef.current = null;
     }
 
     if (distanceBaselineRef.current === null) {
@@ -382,8 +498,20 @@ function Upload({ onImageUpload, onVideoUpload }) {
 
     if (smileBaselineRef.current === null) {
       smileBaselineRef.current = smileScore;
-    } else if (smileScore < smileBaselineRef.current * 1.2) {
-      smileBaselineRef.current = (smileBaselineRef.current * 0.95) + (smileScore * 0.05);
+    } else if (
+      !smileIntermediateReachedRef.current
+      && smileScore <= smileBaselineRef.current * SMILE_BASELINE_UPDATE_MAX_RATIO
+    ) {
+      smileBaselineRef.current = (smileBaselineRef.current * 0.98) + (smileScore * 0.02);
+    }
+
+    if (mouthOpenBaselineRef.current === null) {
+      mouthOpenBaselineRef.current = mouthOpenScore;
+    } else if (
+      !mouthOpenIntermediateReachedRef.current
+      && mouthOpenScore <= mouthOpenBaselineRef.current * 1.03
+    ) {
+      mouthOpenBaselineRef.current = (mouthOpenBaselineRef.current * 0.98) + (mouthOpenScore * 0.02);
     }
 
     const currentChallenge = challengesRef.current[challengeIndexRef.current];
@@ -405,38 +533,116 @@ function Upload({ onImageUpload, onVideoUpload }) {
     const baseline = smileBaselineRef.current || smileScore;
     const ratio = smileScore / Math.max(baseline, 1e-4);
     const absDelta = smileScore - baseline;
-    const smilePassedFrame = ratio >= smileTarget || absDelta >= SMILE_MIN_ABS_DELTA;
+    if (ratio >= SMILE_INTERMEDIATE_FACTOR || absDelta >= SMILE_MIN_ABS_DELTA * 0.5) {
+      smileIntermediateReachedRef.current = true;
+    }
+    smilePeakRatioRef.current = Math.max(smilePeakRatioRef.current, ratio);
+
+    const smilePassedFrame = (
+      smileIntermediateReachedRef.current
+      && ratio >= smileTarget
+      && absDelta >= SMILE_MIN_ABS_DELTA
+      && smilePeakRatioRef.current >= smileTarget
+    );
     if (smilePassedFrame) {
       smileConsecutiveRef.current += 1;
     } else {
       smileConsecutiveRef.current = 0;
     }
-    const ratioProgress = ratio / smileTarget;
-    const deltaProgress = absDelta / SMILE_MIN_ABS_DELTA;
-    const smileProgress = Math.max(0, Math.min(100, Math.max(ratioProgress, deltaProgress) * 100));
+    const intermediateProgress = smileIntermediateReachedRef.current
+      ? 0.35
+      : Math.max(0, (ratio - 1) / Math.max(SMILE_INTERMEDIATE_FACTOR - 1, 1e-4)) * 0.35;
+    const ratioProgress = Math.max(0, (ratio - 1) / Math.max(smileTarget - 1, 1e-4));
+    const deltaProgress = Math.max(0, absDelta / SMILE_MIN_ABS_DELTA);
+    const smileBaseProgress = Math.max(intermediateProgress, ratioProgress, deltaProgress);
+    const smileHoldTargetFrames = currentChallenge.requirements?.includes('smile_hold')
+      ? SMILE_HOLD_CONSECUTIVE_FRAMES_REQUIRED
+      : SMILE_CONSECUTIVE_FRAMES_REQUIRED;
+    const smileConsecutiveProgress = smileConsecutiveRef.current / Math.max(smileHoldTargetFrames, 1);
+    const smileProgress = Math.max(
+      0,
+      Math.min(100, Math.min(smileBaseProgress, smileConsecutiveProgress) * 100),
+    );
     const smilePassed = smileConsecutiveRef.current >= SMILE_CONSECUTIVE_FRAMES_REQUIRED;
+    const smileHoldPassed = smileConsecutiveRef.current >= SMILE_HOLD_CONSECUTIVE_FRAMES_REQUIRED;
+
+    const mouthOpenTarget = currentChallenge.targets?.mouth_open ?? MOUTH_OPEN_TARGET_FACTOR;
+    const mouthOpenBaseline = mouthOpenBaselineRef.current || mouthOpenScore;
+    const mouthOpenRatio = mouthOpenScore / Math.max(mouthOpenBaseline, 1e-4);
+    const mouthOpenAbsDelta = mouthOpenScore - mouthOpenBaseline;
+    if (
+      mouthOpenRatio >= MOUTH_OPEN_INTERMEDIATE_FACTOR
+      || mouthOpenAbsDelta >= MOUTH_OPEN_MIN_ABS_DELTA * 0.5
+    ) {
+      mouthOpenIntermediateReachedRef.current = true;
+    }
+    mouthOpenPeakRatioRef.current = Math.max(mouthOpenPeakRatioRef.current, mouthOpenRatio);
+
+    const mouthOpenPassedFrame = (
+      mouthOpenIntermediateReachedRef.current
+      && mouthOpenRatio >= mouthOpenTarget
+      && mouthOpenAbsDelta >= MOUTH_OPEN_MIN_ABS_DELTA
+      && mouthOpenPeakRatioRef.current >= mouthOpenTarget
+    );
+    if (mouthOpenPassedFrame) {
+      mouthOpenConsecutiveRef.current += 1;
+    } else {
+      mouthOpenConsecutiveRef.current = 0;
+    }
+    const mouthOpenIntermediateProgress = mouthOpenIntermediateReachedRef.current
+      ? 0.35
+      : Math.max(0, (mouthOpenRatio - 1) / Math.max(MOUTH_OPEN_INTERMEDIATE_FACTOR - 1, 1e-4)) * 0.35;
+    const mouthOpenRatioProgress = Math.max(0, (mouthOpenRatio - 1) / Math.max(mouthOpenTarget - 1, 1e-4));
+    const mouthOpenDeltaProgress = Math.max(0, mouthOpenAbsDelta / MOUTH_OPEN_MIN_ABS_DELTA);
+    const mouthOpenBaseProgress = Math.max(
+      mouthOpenIntermediateProgress,
+      mouthOpenRatioProgress,
+      mouthOpenDeltaProgress,
+    );
+    const mouthOpenConsecutiveProgress = (
+      mouthOpenConsecutiveRef.current / Math.max(MOUTH_OPEN_CONSECUTIVE_FRAMES_REQUIRED, 1)
+    );
+    const mouthOpenProgress = Math.max(
+      0,
+      Math.min(100, Math.min(mouthOpenBaseProgress, mouthOpenConsecutiveProgress) * 100),
+    );
+    const mouthOpenPassed = mouthOpenConsecutiveRef.current >= MOUTH_OPEN_CONSECUTIVE_FRAMES_REQUIRED;
 
     const progressByType = {
       blink: blinkProgress,
       distance: distanceProgress,
       smile: smileProgress,
+      smile_hold: smileProgress,
+      mouth_open: mouthOpenProgress,
+    };
+    const progressWeightByType = {
+      blink: MIXED_BLINK_PROGRESS_WEIGHT,
+      distance: MIXED_DISTANCE_PROGRESS_WEIGHT,
+      smile: MIXED_SMILE_PROGRESS_WEIGHT,
+      smile_hold: MIXED_SMILE_PROGRESS_WEIGHT,
     };
     const passedByType = {
       blink: blinkPassed,
       distance: distancePassed,
       smile: smilePassed,
+      smile_hold: smileHoldPassed,
+      mouth_open: mouthOpenPassed,
     };
     const required = Array.isArray(currentChallenge.requirements) ? currentChallenge.requirements : [];
-    const requirementProgress = required.map((key) => progressByType[key] ?? 0);
+    const requirementProgress = required.map((key) => ({
+      value: progressByType[key] ?? 0,
+      weight: required.length > 1 ? (progressWeightByType[key] ?? 1) : 1,
+    }));
     const combinedProgress = requirementProgress.length
-      ? requirementProgress.reduce((acc, value) => acc + value, 0) / requirementProgress.length
+      ? requirementProgress.reduce((acc, item) => acc + (item.value * item.weight), 0)
+        / requirementProgress.reduce((acc, item) => acc + item.weight, 0)
       : 0;
-
-    setLivenessProgress(Math.max(0, Math.min(100, combinedProgress)));
 
     const passed = required.length
       ? required.every((key) => Boolean(passedByType[key]))
       : false;
+
+    setLivenessProgress(passed ? 100 : Math.max(0, Math.min(100, combinedProgress)));
 
     if (passed) {
       completeCurrentChallenge();
@@ -450,6 +656,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
       blinks: blinkCountRef.current,
       faceWidth,
       smileScore,
+      mouthOpenScore,
     });
   }, [completeCurrentChallenge, computeMetrics]);
 
@@ -490,6 +697,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     livenessStartRef.current = null;
     challengesRef.current = [];
     challengeIndexRef.current = 0;
+    setBackendLivenessStatus('idle');
 
     resetChallengeInternals();
     stopRecordingTicker();
@@ -673,6 +881,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     try {
       setVideoStep('Capturando frames direto da camera...');
       setIsRecording(true);
+      setBackendLivenessStatus('idle');
       setRecordingMsLeft(MAX_RECORDING_MS);
       recordingTickerRef.current = setInterval(() => {
         setRecordingMsLeft((prev) => Math.max(0, prev - 100));
@@ -684,16 +893,56 @@ function Upload({ onImageUpload, onVideoUpload }) {
       }
 
       const previewUrl = URL.createObjectURL(frames[0]);
+      if (useBackendLiveness) {
+        setVideoStep('Validando prova de vida no backend...');
+        setBackendLivenessStatus('running');
+        const sessionDefinition = buildBackendLivenessSession();
+        const requiredChecks = Array.from(
+          new Set(
+            sessionDefinition.challenges.flatMap((challenge) => (
+              Array.isArray(challenge.requirements) ? challenge.requirements : []
+            )),
+          ),
+        );
+
+        try {
+          const livenessResult = await analyzeLiveness(frames, sessionDefinition, requiredChecks);
+          if (!livenessResult.passed) {
+            setBackendLivenessStatus('warning');
+            setCameraError('Backend de liveness reprovou esta captura, mas a analise continuara.');
+          } else {
+            setBackendLivenessStatus('passed');
+          }
+        } catch (error) {
+          setBackendLivenessStatus('warning');
+          const message = error instanceof Error ? error.message : 'Falha no backend de liveness';
+          setCameraError(`${message}. A analise continuara sem bloquear o envio.`);
+        }
+      }
       setVideoStep('Enviando frames para analise...');
       onVideoUpload(frames, targetModel, previewUrl);
     } catch (error) {
+      if (useBackendLiveness) {
+        setBackendLivenessStatus('failed');
+      }
       setCameraError(error.message || 'Falha na captura direta de frames.');
       setVideoStep('Falha ao capturar/enviar frames');
     } finally {
       setIsRecording(false);
       stopRecordingTicker();
     }
-  }, [captureFramesFromLiveVideo, faceDetected, faceValidationMode, isRecording, livenessStatus, onVideoUpload, stopRecordingTicker, targetModel]);
+  }, [
+    buildBackendLivenessSession,
+    captureFramesFromLiveVideo,
+    faceDetected,
+    faceValidationMode,
+    isRecording,
+    livenessStatus,
+    onVideoUpload,
+    stopRecordingTicker,
+    targetModel,
+    useBackendLiveness,
+  ]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
@@ -759,6 +1008,31 @@ function Upload({ onImageUpload, onVideoUpload }) {
           <option value="alexnet">AlexNet</option>
         </select>
       </div>
+
+      {mode === 'video' && (
+        <div className="model-target-card">
+          <label htmlFor="backend-liveness-toggle">Prova de vida no backend</label>
+          <div className="inline-toggle-row">
+            <input
+              id="backend-liveness-toggle"
+              type="checkbox"
+              checked={useBackendLiveness}
+              onChange={(e) => {
+                setUseBackendLiveness(e.target.checked);
+                setBackendLivenessStatus('idle');
+              }}
+            />
+            <span>
+              {useBackendLiveness
+                ? 'Ativada para esta analise'
+                : 'Desativada para esta analise'}
+            </span>
+          </div>
+          <p className="toggle-help">
+            Quando ativada, os frames capturados tambem passam pela API de liveness antes da analise do modelo.
+          </p>
+        </div>
+      )}
 
       {mode === 'image' ? (
         <div
@@ -900,6 +1174,19 @@ function Upload({ onImageUpload, onVideoUpload }) {
             {faceValidationMode === 'none' && cameraReady && (
               <p className="camera-note">Deteccao local indisponivel. Validacao de face ocorrera no backend.</p>
             )}
+            {useBackendLiveness && cameraReady && (
+              <p className={`camera-note backend-liveness ${backendLivenessStatus}`}>
+                {backendLivenessStatus === 'running'
+                  ? 'Backend de liveness validando a captura.'
+                  : backendLivenessStatus === 'passed'
+                    ? 'Backend de liveness aprovou esta captura.'
+                    : backendLivenessStatus === 'failed'
+                      ? 'Backend de liveness reprovou esta captura.'
+                      : backendLivenessStatus === 'warning'
+                        ? 'Backend de liveness alertou um problema, mas a analise seguira.'
+                      : 'Backend de liveness sera usado antes do envio da analise.'}
+              </p>
+            )}
             {cameraError && <p className="camera-error">{cameraError}</p>}
             <p className="camera-step">Etapa: {videoStep}</p>
             {cameraReady && (
@@ -912,6 +1199,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
                 <span>Blinks: {earDebug.blinks}</span>
                 <span>Face width: {earDebug.faceWidth !== null ? earDebug.faceWidth.toFixed(3) : '--'}</span>
                 <span>Smile score: {earDebug.smileScore !== null ? earDebug.smileScore.toFixed(3) : '--'}</span>
+                <span>Mouth open: {earDebug.mouthOpenScore !== null ? earDebug.mouthOpenScore.toFixed(3) : '--'}</span>
               </div>
             )}
           </div>

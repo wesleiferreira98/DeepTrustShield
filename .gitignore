@@ -57,5 +57,10 @@ htmlcov/
 *.pth
 
 *.pem
-
+*.jpg
+*.webp
+*.jpeg
 *.db
+.venv312
+.venv311
+kaggle.json
