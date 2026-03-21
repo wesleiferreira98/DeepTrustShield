@@ -25,6 +25,25 @@ O modelo so deve ser comparado com outro depois de olhar:
 
 Se o score medio das imagens reais sobe de forma consistente em um grupo, o modelo esta aprendendo um atalho ruim.
 
+## Tamanho Minimo Recomendado Do Holdout
+
+Minimo operacional para uma primeira auditoria:
+
+- `50` imagens `real` por grupo
+- `50` imagens `fake` por grupo
+
+Melhor ponto de partida:
+
+- `100` imagens `real` por grupo
+- `100` imagens `fake` por grupo
+
+Ideal para comparar modelos com mais confianca:
+
+- `200+` imagens `real` por grupo
+- `200+` imagens `fake` por grupo
+
+Se um grupo tiver poucas amostras, a auditoria ainda pode ser rodada, mas a leitura fica muito mais instavel.
+
 ## Script de Auditoria
 
 Arquivo: `scripts/audit_bias.py`
@@ -107,6 +126,33 @@ python scripts/audit_bias.py \
   --target-model alexnet \
   --output-json artifacts/bias_compare.json \
   --output-csv artifacts/bias_compare
+```
+
+### 4. Auditoria do AlexNet v7
+
+Antes de rodar:
+
+- coloque `alexnet_deepfake_v7.pth` em `model/weights/`
+- preencha `data/fairness_holdout/` sem reutilizar imagens do treino
+
+Gerar manifesto:
+
+```bash
+python scripts/build_bias_manifest.py \
+  --root data/fairness_holdout \
+  --layout group-label \
+  --output data/manifests/bias_audit_manifest.csv \
+  --max-per-cell 100
+```
+
+Rodar auditoria:
+
+```bash
+python scripts/audit_bias.py \
+  --manifest data/manifests/bias_audit_manifest.csv \
+  --target-model alexnet \
+  --output-json artifacts/bias_alexnet_v7.json \
+  --output-csv artifacts/bias_alexnet_v7
 ```
 
 ## Como Ler o Resultado
