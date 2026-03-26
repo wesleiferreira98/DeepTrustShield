@@ -13,12 +13,12 @@ const BLINK_REOPEN_THRESHOLD_FACTOR = 0.93;
 const BLINK_MIN_DEPTH_FACTOR = 0.95;
 const BLINK_MAX_FACE_WIDTH_VARIATION_RATIO = 0.12;
 const DISTANCE_TARGET_RANGE_RATIO = 0.16;
-const SMILE_TARGET_FACTOR = 1.18;
-const SMILE_MIN_ABS_DELTA = 0.055;
-const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 2;
-const SMILE_INTERMEDIATE_FACTOR = 1.09;
+const SMILE_TARGET_FACTOR = 1.1;
+const SMILE_MIN_ABS_DELTA = 0.035;
+const SMILE_CONSECUTIVE_FRAMES_REQUIRED = 1;
+const SMILE_INTERMEDIATE_FACTOR = 1.05;
 const SMILE_BASELINE_UPDATE_MAX_RATIO = 1.015;
-const SMILE_HOLD_CONSECUTIVE_FRAMES_REQUIRED = 4;
+const SMILE_HOLD_CONSECUTIVE_FRAMES_REQUIRED = 3;
 const MOUTH_OPEN_TARGET_FACTOR = 1.46;
 const MOUTH_OPEN_INTERMEDIATE_FACTOR = 1.24;
 const MOUTH_OPEN_MIN_ABS_DELTA = 0.065;
@@ -125,6 +125,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const [faceDetected, setFaceDetected] = useState(false);
   const [faceValidationMode, setFaceValidationMode] = useState('none');
   const [useBackendLiveness, setUseBackendLiveness] = useState(true);
+  const [skipLocalLiveness, setSkipLocalLiveness] = useState(false);
   const [backendLivenessStatus, setBackendLivenessStatus] = useState('idle');
 
   const [livenessStatus, setLivenessStatus] = useState('pending'); // pending | passed | timeout | unavailable
@@ -151,6 +152,10 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const detectorIntervalRef = useRef(null);
   const detectorBusyRef = useRef(false);
   const recordingTickerRef = useRef(null);
+  const lastDetectorActivityRef = useRef(0);
+  const lastChallengeProgressRef = useRef(0);
+  const lastChallengeProgressAtRef = useRef(0);
+  const lastFaceSeenAtRef = useRef(0);
 
   const livenessStatusRef = useRef('pending');
   const livenessStartRef = useRef(null);
@@ -250,6 +255,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
     setChallengeLabel(challenge.label);
     setChallengeHint(challenge.hint);
     setLivenessProgress(0);
+    lastChallengeProgressRef.current = 0;
+    lastChallengeProgressAtRef.current = Date.now();
   }, []);
 
   const buildChallenges = useCallback(() => {
@@ -339,6 +346,10 @@ function Upload({ onImageUpload, onVideoUpload }) {
       setChallengeList([]);
       setLivenessProgress(0);
       livenessStartRef.current = null;
+      lastDetectorActivityRef.current = Date.now();
+      lastChallengeProgressRef.current = 0;
+      lastChallengeProgressAtRef.current = Date.now();
+      lastFaceSeenAtRef.current = 0;
       return;
     }
 
@@ -346,6 +357,10 @@ function Upload({ onImageUpload, onVideoUpload }) {
     setChallengeList(challengesRef.current.map((item) => item.label));
     challengeIndexRef.current = 0;
     livenessStartRef.current = Date.now();
+    lastDetectorActivityRef.current = Date.now();
+    lastChallengeProgressRef.current = 0;
+    lastChallengeProgressAtRef.current = Date.now();
+    lastFaceSeenAtRef.current = 0;
     livenessStatusRef.current = 'pending';
     setLivenessStatus('pending');
     applyChallengeUi(0);
@@ -426,6 +441,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
   }, [applyChallengeUi, resetChallengeInternals]);
 
   const updateLivenessFromLandmarks = useCallback((landmarks) => {
+    lastDetectorActivityRef.current = Date.now();
+
     const currentStatus = livenessStatusRef.current;
     if (currentStatus === 'passed' || currentStatus === 'unavailable') {
       return;
@@ -642,7 +659,12 @@ function Upload({ onImageUpload, onVideoUpload }) {
       ? required.every((key) => Boolean(passedByType[key]))
       : false;
 
-    setLivenessProgress(passed ? 100 : Math.max(0, Math.min(100, combinedProgress)));
+    const nextProgress = passed ? 100 : Math.max(0, Math.min(100, combinedProgress));
+    setLivenessProgress(nextProgress);
+    if (Math.abs(nextProgress - lastChallengeProgressRef.current) >= 1) {
+      lastChallengeProgressRef.current = nextProgress;
+      lastChallengeProgressAtRef.current = Date.now();
+    }
 
     if (passed) {
       completeCurrentChallenge();
@@ -695,6 +717,10 @@ function Upload({ onImageUpload, onVideoUpload }) {
     setChallengeList([]);
 
     livenessStartRef.current = null;
+    lastDetectorActivityRef.current = 0;
+    lastChallengeProgressRef.current = 0;
+    lastChallengeProgressAtRef.current = 0;
+    lastFaceSeenAtRef.current = 0;
     challengesRef.current = [];
     challengeIndexRef.current = 0;
     setBackendLivenessStatus('idle');
@@ -749,11 +775,66 @@ function Upload({ onImageUpload, onVideoUpload }) {
         await detectorRef.current.send({ image: video });
       } catch {
         setFaceDetected(false);
+        setVideoStep('Falha temporaria no detector. Tentando recuperar...');
       } finally {
         detectorBusyRef.current = false;
       }
     }, 250);
   }, [stopFaceDetection]);
+
+  useEffect(() => {
+    if (mode !== 'video' || !cameraReady) {
+      return undefined;
+    }
+
+    const watchdog = setInterval(() => {
+      const now = Date.now();
+
+      if (
+        faceValidationMode === 'mediapipe'
+        && livenessStatusRef.current === 'pending'
+        && lastDetectorActivityRef.current
+        && now - lastDetectorActivityRef.current > 6000
+      ) {
+        detectorBusyRef.current = false;
+        setVideoStep('Detector sem resposta. Reiniciando monitoramento...');
+        startFaceDetection();
+        lastDetectorActivityRef.current = now;
+      }
+
+      if (
+        faceValidationMode === 'mediapipe'
+        && livenessStatusRef.current === 'pending'
+        && lastFaceSeenAtRef.current
+        && now - lastFaceSeenAtRef.current > 5000
+      ) {
+        setVideoStep('Face fora do quadro. Reposicione o rosto para continuar.');
+        return;
+      }
+
+      if (
+        livenessStatusRef.current === 'pending'
+        && faceDetected
+        && challengeIndexRef.current < challengesRef.current.length
+        && lastChallengeProgressAtRef.current
+        && now - lastChallengeProgressAtRef.current > 12000
+      ) {
+        resetChallengeInternals();
+        applyChallengeUi(challengeIndexRef.current);
+        setVideoStep('Desafio reiniciado por falta de progresso. Tente novamente.');
+      }
+    }, 2000);
+
+    return () => clearInterval(watchdog);
+  }, [
+    applyChallengeUi,
+    cameraReady,
+    faceDetected,
+    faceValidationMode,
+    mode,
+    resetChallengeInternals,
+    startFaceDetection,
+  ]);
 
   const startCamera = useCallback(async () => {
     setCameraError(null);
@@ -785,14 +866,23 @@ function Upload({ onImageUpload, onVideoUpload }) {
         });
 
         mpDetector.onResults((results) => {
-          const hasFaces = Array.isArray(results?.multiFaceLandmarks) && results.multiFaceLandmarks.length > 0;
-          setFaceDetected(hasFaces);
+          try {
+            lastDetectorActivityRef.current = Date.now();
+            const hasFaces = Array.isArray(results?.multiFaceLandmarks) && results.multiFaceLandmarks.length > 0;
+            setFaceDetected(hasFaces);
 
-          if (hasFaces) {
-            if (!livenessStartRef.current) {
-              livenessStartRef.current = Date.now();
+            if (hasFaces) {
+              lastFaceSeenAtRef.current = Date.now();
+              if (!livenessStartRef.current) {
+                livenessStartRef.current = Date.now();
+              }
+              updateLivenessFromLandmarks(results.multiFaceLandmarks[0]);
+            } else if (livenessStatusRef.current === 'pending') {
+              setVideoStep('Face detectada anteriormente. Reposicione o rosto para continuar a prova de vida.');
             }
-            updateLivenessFromLandmarks(results.multiFaceLandmarks[0]);
+          } catch (error) {
+            setCameraError(error instanceof Error ? error.message : 'Falha no detector de prova de vida.');
+            setVideoStep('Falha no detector. Reinicie a camera se o problema persistir.');
           }
         });
 
@@ -869,7 +959,11 @@ function Upload({ onImageUpload, onVideoUpload }) {
       return;
     }
 
-    const shouldRequireLiveness = faceValidationMode !== 'none' && livenessStatus !== 'unavailable';
+    const shouldRequireLiveness = (
+      faceValidationMode !== 'none'
+      && livenessStatus !== 'unavailable'
+      && !skipLocalLiveness
+    );
     if (shouldRequireLiveness && livenessStatus !== 'passed') {
       setCameraError('Conclua a prova de vida antes de gravar.');
       setVideoStep('Aguardando prova de vida');
@@ -942,6 +1036,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     stopRecordingTicker,
     targetModel,
     useBackendLiveness,
+    skipLocalLiveness,
   ]);
 
   const handleDragOver = useCallback((e) => {
@@ -1005,7 +1100,9 @@ function Upload({ onImageUpload, onVideoUpload }) {
           <option value="efficientnet_b0">EfficientNet-B0 (generico)</option>
           <option value="efficientnet_b3">EfficientNet-B3</option>
           <option value="efficientnet_b4">EfficientNet-B4</option>
-          <option value="alexnet">AlexNet</option>
+          <option value="alexnet_v7">AlexNet v7</option>
+          <option value="alexnet_v6">AlexNet v6</option>
+          <option value="alexnet">AlexNet (auto)</option>
         </select>
       </div>
 
@@ -1030,6 +1127,31 @@ function Upload({ onImageUpload, onVideoUpload }) {
           </div>
           <p className="toggle-help">
             Quando ativada, os frames capturados tambem passam pela API de liveness antes da analise do modelo.
+          </p>
+          <label htmlFor="skip-local-liveness-toggle">Pular prova de vida local</label>
+          <div className="inline-toggle-row">
+            <input
+              id="skip-local-liveness-toggle"
+              type="checkbox"
+              checked={skipLocalLiveness}
+              onChange={(e) => {
+                setSkipLocalLiveness(e.target.checked);
+                setCameraError(null);
+                setVideoStep(
+                  e.target.checked
+                    ? 'Prova de vida local ignorada para este teste.'
+                    : 'Prova de vida local reativada.',
+                );
+              }}
+            />
+            <span>
+              {skipLocalLiveness
+                ? 'Ignorada para este teste'
+                : 'Obrigatoria antes da gravacao'}
+            </span>
+          </div>
+          <p className="toggle-help">
+            Use isso apenas para testar o fluxo com webcam enquanto calibramos os desafios.
           </p>
         </div>
       )}
@@ -1101,7 +1223,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
                 <span className={`face-status ${faceDetected ? 'ok' : 'wait'}`}>
                   {faceDetected ? 'Face detectada: pronto para gravar' : 'Aguardando face no enquadramento'}
                 </span>
-                <div className={`liveness-box ${livenessStatus}`}>
+                <div className={`liveness-box ${skipLocalLiveness ? 'skipped' : livenessStatus}`}>
                   <div className="liveness-header">
                     <span className="liveness-title">Prova de vida</span>
                     {challengeStep.total > 0 && (
@@ -1116,7 +1238,9 @@ function Upload({ onImageUpload, onVideoUpload }) {
                   </div>
                   <span className="liveness-percent">{Math.round(livenessProgress)}%</span>
                   <span className="liveness-status">
-                    {livenessStatus === 'passed'
+                    {skipLocalLiveness
+                      ? 'Ignorada manualmente para este teste'
+                      : livenessStatus === 'passed'
                       ? 'Aprovado'
                       : livenessStatus === 'timeout'
                         ? 'Tempo excedido (reative a camera)'
@@ -1154,7 +1278,11 @@ function Upload({ onImageUpload, onVideoUpload }) {
                       faceValidationMode !== 'none'
                       && (
                         !faceDetected
-                        || (livenessStatus !== 'passed' && livenessStatus !== 'unavailable')
+                        || (
+                          !skipLocalLiveness
+                          && livenessStatus !== 'passed'
+                          && livenessStatus !== 'unavailable'
+                        )
                       )
                     )
                   }
@@ -1170,6 +1298,11 @@ function Upload({ onImageUpload, onVideoUpload }) {
 
             {faceValidationMode === 'mediapipe' && cameraReady && (
               <p className="camera-note">Usando MediaPipe FaceMesh para prova de vida com desafios dinamicos.</p>
+            )}
+            {skipLocalLiveness && cameraReady && (
+              <p className="camera-note liveness-skip-note">
+                Prova de vida local ignorada manualmente. A gravacao esta liberada para teste do modelo.
+              </p>
             )}
             {faceValidationMode === 'none' && cameraReady && (
               <p className="camera-note">Deteccao local indisponivel. Validacao de face ocorrera no backend.</p>

@@ -166,6 +166,8 @@ def _infer_model_name_from_filename(weights_path: str) -> str:
 
 def _infer_model_version(model_name: str, weights_path: str) -> str:
     filename = os.path.basename(weights_path).lower()
+    if "alexnet" in filename and ("_v7" in filename or "v7" in filename):
+        return "alexnet_v7"
     if "alexnet" in filename and ("_v6" in filename or "v6" in filename):
         return "alexnet_v6"
     if "efficientnet_b0" in filename and ("_v5" in filename or "v5" in filename):
@@ -194,17 +196,18 @@ def _discover_weight_files(model_path: str) -> list[str]:
 
     # Prioriza checkpoints mais novos do comparativo
     priority_exact = {
-        "alexnet_deepfake_v6.pth": 0,    # v6 AlexNet
-        "efficientnet_b0_deepfake_v5.pth": 1,  # v5 é prioridade máxima para EfficientNet
-        "efficientnet_b0_deepfake_v4.pth": 2,
-        "best_model_efficientnet_b4.pth": 3,
-        "best_model_efficientnet_b3.pth": 4,
-        "best_model_efficientnet_b0.pth": 5,
-        "best_model_alexnet.pth": 6,
-        "best_model.pth": 7,
-        "efficientnet_b0_deepfake_v2.pth": 8,
-        "efficientnet_b0_deepfake_v1.pth": 9,
-        "efficientnet_b0_deepfake.pth": 10,
+        "alexnet_deepfake_v7.pth": 0,    # v7 AlexNet
+        "alexnet_deepfake_v6.pth": 1,    # v6 AlexNet
+        "efficientnet_b0_deepfake_v5.pth": 2,  # v5 é prioridade máxima para EfficientNet
+        "efficientnet_b0_deepfake_v4.pth": 3,
+        "best_model_efficientnet_b4.pth": 4,
+        "best_model_efficientnet_b3.pth": 5,
+        "best_model_efficientnet_b0.pth": 6,
+        "best_model_alexnet.pth": 7,
+        "best_model.pth": 8,
+        "efficientnet_b0_deepfake_v2.pth": 9,
+        "efficientnet_b0_deepfake_v1.pth": 10,
+        "efficientnet_b0_deepfake.pth": 11,
     }
 
     def rank(path: str) -> tuple[int, str]:
@@ -232,6 +235,8 @@ def _select_candidates(candidate_weights: list[str], target_model: str) -> list[
         "efficientnet_b0": ("efficientnet_b0",),
         "efficientnet_b3": ("efficientnet_b3",),
         "efficientnet_b4": ("efficientnet_b4",),
+        "alexnet_v7": ("alexnet_v7", "_v7", "alexnet_deepfake_v7"),
+        "alexnet_v6": ("alexnet_v6", "_v6", "alexnet_deepfake_v6"),
         "alexnet": ("alexnet",),
     }
     aliases = alias_map.get(target_model, (target_model,))
@@ -286,7 +291,7 @@ def load_model(model_path: str, target_model: str = "auto"):
 
             # Use DeepfakeDetectorAlexNet for v6/alexnet, DeepfakeDetectorV4 for v4/v5, otherwise regular
             filename = os.path.basename(weights_path).lower()
-            if "_v6" in filename or "alexnet" in filename:
+            if "_v7" in filename or "_v6" in filename or "alexnet" in filename:
                 logger.info(f"Using DeepfakeDetectorAlexNet architecture for {filename}")
                 model = DeepfakeDetectorAlexNet(dropout=0.5)
             elif "_v4" in filename or "_v5" in filename or "v4" in filename or "v5" in filename:

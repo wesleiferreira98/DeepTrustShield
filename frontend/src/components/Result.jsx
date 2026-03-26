@@ -9,7 +9,9 @@ const MODEL_OPTIONS = [
   { value: 'efficientnet_b0', label: 'EfficientNet-B0 (generico)' },
   { value: 'efficientnet_b3', label: 'EfficientNet-B3' },
   { value: 'efficientnet_b4', label: 'EfficientNet-B4' },
-  { value: 'alexnet', label: 'AlexNet' },
+  { value: 'alexnet_v7', label: 'AlexNet v7' },
+  { value: 'alexnet_v6', label: 'AlexNet v6' },
+  { value: 'alexnet', label: 'AlexNet (auto)' },
 ];
 
 function Result({
