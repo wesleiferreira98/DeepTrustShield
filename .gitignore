@@ -64,3 +64,11 @@ htmlcov/
 .venv312
 .venv311
 kaggle.json
+.kaggle/
+data/downloads/
+data/raw/rebuilt_kaggle/
+data/source/train_pool_rebuilt/
+data/dataset_colab_rebuilt/
+data/manifests/kaggle_rebuild_manifest.csv
+data/**/*.zip
+data/**/*.tar.gz

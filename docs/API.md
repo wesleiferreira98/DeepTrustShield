@@ -60,6 +60,14 @@ auto
 | `efficientnet_b0_v5` | EfficientNet-B0 versão 5 (recomendado) |
 | `efficientnet_b3` | EfficientNet-B3 (maior) |
 | `efficientnet_b4` | EfficientNet-B4 (maior) |
+| `mobilenet_v3_small_v1` | MobileNetV3 Small versão 1 |
+| `mobilenet_v3_small` | MobileNetV3 Small |
+| `mobilenet` | MobileNet automático |
+| `alexnet_v82` | AlexNet versão 8.2 |
+| `alexnet_v81` | AlexNet versão 8.1 |
+| `alexnet_v8` | AlexNet versão 8 |
+| `alexnet_v7` | AlexNet versão 7 |
+| `alexnet_v6` | AlexNet versão 6 |
 | `alexnet` | AlexNet (experimental) |
 
 #### Response

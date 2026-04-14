@@ -128,11 +128,11 @@ python scripts/audit_bias.py \
   --output-csv artifacts/bias_compare
 ```
 
-### 4. Auditoria do AlexNet v7
+### 4. Auditoria do AlexNet mais recente
 
 Antes de rodar:
 
-- coloque `alexnet_deepfake_v7.pth` em `model/weights/`
+- coloque `alexnet_deepfake_v82.pth` em `model/weights/`
 - preencha `data/fairness_holdout/` sem reutilizar imagens do treino
 
 Gerar manifesto:
@@ -150,9 +150,9 @@ Rodar auditoria:
 ```bash
 python scripts/audit_bias.py \
   --manifest data/manifests/bias_audit_manifest.csv \
-  --target-model alexnet \
-  --output-json artifacts/bias_alexnet_v7.json \
-  --output-csv artifacts/bias_alexnet_v7
+  --target-model alexnet_v82 \
+  --output-json artifacts/bias_alexnet_v82.json \
+  --output-csv artifacts/bias_alexnet_v82
 ```
 
 ## Como Ler o Resultado

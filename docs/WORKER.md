@@ -270,6 +270,11 @@ def run_inference(face_tensor, model_path, target_model="auto") -> float:
 | EfficientNet-B0    | `best_model_efficientnet_b0.pth`     | `DeepfakeDetector`        | Modelo padrão     |
 | EfficientNet-B3    | `best_model_efficientnet_b3.pth`     | `DeepfakeDetector`        | Maior capacidade   |
 | EfficientNet-B4    | `best_model_efficientnet_b4.pth`     | `DeepfakeDetector`        | Máxima capacidade |
+| MobileNetV3 Small v1 | `mobilenet_v3_small_deepfake_v1.pth` | `DeepfakeDetectorMobileNetV3Small` | Modelo leve |
+| AlexNet v8.2       | `alexnet_deepfake_v82.pth`           | `DeepfakeDetectorAlexNet` | Modelo AlexNet mais recente |
+| AlexNet v8.1       | `alexnet_deepfake_v81.pth`           | `DeepfakeDetectorAlexNet` | Train pool ponderado |
+| AlexNet v8         | `alexnet_deepfake_v8.pth`            | `DeepfakeDetectorAlexNet` | Train pool ponderado |
+| AlexNet v7         | `alexnet_deepfake_v7.pth`            | `DeepfakeDetectorAlexNet` | Dataset local balanceado |
 | AlexNet v6         | `alexnet_deepfake_v6.pth`            | `DeepfakeDetectorAlexNet` | Modelo legado      |
 
 #### Arquiteturas
@@ -310,7 +315,7 @@ class DeepfakeDetectorV4(nn.Module):
 Quando `target_model="auto"`:
 
 1. Busca pesos em `MODEL_PATH` e diretório pai
-2. Ordena por prioridade (v5 > v4 > b4 > b3 > b0)
+2. Ordena por prioridade (alexnet_v82 > alexnet_v81 > alexnet_v8 > alexnet_v7 > mobilenet_v3_small_v1 > alexnet_v6 > efficientnet_b0_v5 > ...)
 3. Carrega o primeiro disponível
 
 ### 6. Calibração do Score (`calibrating_score`)

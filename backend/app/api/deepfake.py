@@ -31,8 +31,14 @@ ALLOWED_TARGET_MODELS = {
     "efficientnet_b0",
     "efficientnet_b3",
     "efficientnet_b4",
+    "mobilenet",
+    "mobilenet_v3_small",
+    "mobilenet_v3_small_v1",
     "alexnet_v6",
     "alexnet_v7",
+    "alexnet_v8",
+    "alexnet_v81",
+    "alexnet_v82",
     "alexnet",
 }
 

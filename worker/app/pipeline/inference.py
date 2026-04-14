@@ -107,7 +107,7 @@ class DeepfakeDetectorV4(nn.Module):
 
 
 class DeepfakeDetectorAlexNet(nn.Module):
-    """Modelo de detecção de deepfake v6 - AlexNet backbone."""
+    """Modelo de detecção de deepfake AlexNet usado nos notebooks v6+."""
     
     def __init__(self, dropout=0.5):
         super().__init__()
@@ -156,9 +156,37 @@ class DeepfakeDetectorAlexNet(nn.Module):
         return probs
 
 
+class DeepfakeDetectorMobileNetV3Small(nn.Module):
+    """Modelo de detecção de deepfake MobileNetV3 Small."""
+
+    def __init__(self, dropout=0.3):
+        super().__init__()
+
+        import torchvision.models as models
+
+        self.backbone = models.mobilenet_v3_small(weights=None)
+        in_features = self.backbone.classifier[0].in_features
+        self.backbone.classifier = nn.Sequential(
+            nn.Linear(in_features, 512),
+            nn.Hardswish(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(512, 1),
+        )
+
+    def forward(self, x):
+        return self.backbone(x).squeeze(-1)
+
+    def predict_proba(self, x):
+        """Retorna probabilidade de ser fake."""
+        with torch.no_grad():
+            logits = self.forward(x)
+            probs = torch.sigmoid(logits)
+        return probs
+
+
 def _infer_model_name_from_filename(weights_path: str) -> str:
     filename = os.path.basename(weights_path).lower()
-    for name in ("efficientnet_b4", "efficientnet_b3", "efficientnet_b0", "alexnet"):
+    for name in ("mobilenet_v3_small", "efficientnet_b4", "efficientnet_b3", "efficientnet_b0", "alexnet"):
         if name in filename:
             return name
     return "efficientnet_b0"
@@ -166,6 +194,14 @@ def _infer_model_name_from_filename(weights_path: str) -> str:
 
 def _infer_model_version(model_name: str, weights_path: str) -> str:
     filename = os.path.basename(weights_path).lower()
+    if "mobilenet_v3_small" in filename and ("_v1" in filename or "v1" in filename):
+        return "mobilenet_v3_small_v1"
+    if "alexnet" in filename and ("_v82" in filename or "v82" in filename or "v8.2" in filename):
+        return "alexnet_v82"
+    if "alexnet" in filename and ("_v81" in filename or "v81" in filename or "v8.1" in filename):
+        return "alexnet_v81"
+    if "alexnet" in filename and ("_v8" in filename or "v8" in filename):
+        return "alexnet_v8"
     if "alexnet" in filename and ("_v7" in filename or "v7" in filename):
         return "alexnet_v7"
     if "alexnet" in filename and ("_v6" in filename or "v6" in filename):
@@ -196,18 +232,22 @@ def _discover_weight_files(model_path: str) -> list[str]:
 
     # Prioriza checkpoints mais novos do comparativo
     priority_exact = {
-        "alexnet_deepfake_v7.pth": 0,    # v7 AlexNet
-        "alexnet_deepfake_v6.pth": 1,    # v6 AlexNet
-        "efficientnet_b0_deepfake_v5.pth": 2,  # v5 é prioridade máxima para EfficientNet
-        "efficientnet_b0_deepfake_v4.pth": 3,
-        "best_model_efficientnet_b4.pth": 4,
-        "best_model_efficientnet_b3.pth": 5,
-        "best_model_efficientnet_b0.pth": 6,
-        "best_model_alexnet.pth": 7,
-        "best_model.pth": 8,
-        "efficientnet_b0_deepfake_v2.pth": 9,
-        "efficientnet_b0_deepfake_v1.pth": 10,
-        "efficientnet_b0_deepfake.pth": 11,
+        "alexnet_deepfake_v82.pth": 0,
+        "alexnet_deepfake_v81.pth": 1,
+        "alexnet_deepfake_v8.pth": 2,
+        "alexnet_deepfake_v7.pth": 3,
+        "mobilenet_v3_small_deepfake_v1.pth": 4,
+        "alexnet_deepfake_v6.pth": 5,
+        "efficientnet_b0_deepfake_v5.pth": 6,  # v5 é prioridade máxima para EfficientNet
+        "efficientnet_b0_deepfake_v4.pth": 7,
+        "best_model_efficientnet_b4.pth": 8,
+        "best_model_efficientnet_b3.pth": 9,
+        "best_model_efficientnet_b0.pth": 10,
+        "best_model_alexnet.pth": 11,
+        "best_model.pth": 12,
+        "efficientnet_b0_deepfake_v2.pth": 13,
+        "efficientnet_b0_deepfake_v1.pth": 14,
+        "efficientnet_b0_deepfake.pth": 15,
     }
 
     def rank(path: str) -> tuple[int, str]:
@@ -235,6 +275,12 @@ def _select_candidates(candidate_weights: list[str], target_model: str) -> list[
         "efficientnet_b0": ("efficientnet_b0",),
         "efficientnet_b3": ("efficientnet_b3",),
         "efficientnet_b4": ("efficientnet_b4",),
+        "mobilenet_v3_small_v1": ("mobilenet_v3_small_v1", "mobilenet_v3_small_deepfake_v1"),
+        "mobilenet_v3_small": ("mobilenet_v3_small",),
+        "mobilenet": ("mobilenet",),
+        "alexnet_v82": ("alexnet_v82", "_v82", "v8.2", "alexnet_deepfake_v82"),
+        "alexnet_v81": ("alexnet_v81", "_v81", "v8.1", "alexnet_deepfake_v81"),
+        "alexnet_v8": ("alexnet_v8", "_v8", "alexnet_deepfake_v8"),
         "alexnet_v7": ("alexnet_v7", "_v7", "alexnet_deepfake_v7"),
         "alexnet_v6": ("alexnet_v6", "_v6", "alexnet_deepfake_v6"),
         "alexnet": ("alexnet",),
@@ -289,11 +335,20 @@ def load_model(model_path: str, target_model: str = "auto"):
             if not model_name:
                 model_name = _infer_model_name_from_filename(weights_path)
 
-            # Use DeepfakeDetectorAlexNet for v6/alexnet, DeepfakeDetectorV4 for v4/v5, otherwise regular
+            # Use a arquitetura compatível com o checkpoint selecionado.
             filename = os.path.basename(weights_path).lower()
-            if "_v7" in filename or "_v6" in filename or "alexnet" in filename:
+            if "mobilenet_v3_small" in filename or model_name == "mobilenet_v3_small":
+                logger.info(f"Using DeepfakeDetectorMobileNetV3Small architecture for {filename}")
+                dropout = 0.3
+                if isinstance(checkpoint, dict):
+                    dropout = checkpoint.get("config", {}).get("dropout", dropout)
+                model = DeepfakeDetectorMobileNetV3Small(dropout=dropout)
+            elif "alexnet" in filename or model_name == "alexnet":
                 logger.info(f"Using DeepfakeDetectorAlexNet architecture for {filename}")
-                model = DeepfakeDetectorAlexNet(dropout=0.5)
+                dropout = 0.5
+                if isinstance(checkpoint, dict):
+                    dropout = checkpoint.get("config", {}).get("dropout", dropout)
+                model = DeepfakeDetectorAlexNet(dropout=dropout)
             elif "_v4" in filename or "_v5" in filename or "v4" in filename or "v5" in filename:
                 logger.info(f"Using DeepfakeDetectorV4 architecture for {filename}")
                 model = DeepfakeDetectorV4(model_name=model_name, num_classes=1, dropout=0.5)

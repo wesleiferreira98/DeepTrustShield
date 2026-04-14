@@ -1100,6 +1100,11 @@ function Upload({ onImageUpload, onVideoUpload }) {
           <option value="efficientnet_b0">EfficientNet-B0 (generico)</option>
           <option value="efficientnet_b3">EfficientNet-B3</option>
           <option value="efficientnet_b4">EfficientNet-B4</option>
+          <option value="mobilenet_v3_small_v1">MobileNetV3 Small v1</option>
+          <option value="mobilenet">MobileNet (auto)</option>
+          <option value="alexnet_v82">AlexNet v8.2</option>
+          <option value="alexnet_v81">AlexNet v8.1</option>
+          <option value="alexnet_v8">AlexNet v8</option>
           <option value="alexnet_v7">AlexNet v7</option>
           <option value="alexnet_v6">AlexNet v6</option>
           <option value="alexnet">AlexNet (auto)</option>

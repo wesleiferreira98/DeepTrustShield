@@ -80,7 +80,7 @@ POST /v1/deepfake/image/analyze
 Content-Type: multipart/form-data
 
 file: <binary>
-target_model: auto | efficientnet_b0 | efficientnet_b0_v4 | efficientnet_b0_v5 | efficientnet_b3 | efficientnet_b4 | alexnet
+target_model: auto | efficientnet_b0 | efficientnet_b0_v4 | efficientnet_b0_v5 | efficientnet_b3 | efficientnet_b4 | alexnet_v82 | alexnet_v81 | alexnet_v8 | alexnet_v7 | alexnet_v6 | alexnet | mobilenet_v3_small_v1 | mobilenet_v3_small | mobilenet
 ```
 
 **Response:**
