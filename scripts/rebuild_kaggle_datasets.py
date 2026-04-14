@@ -244,12 +244,21 @@ def run_kaggle_download(dataset_key: str, dataset_spec: dict, download_dir: Path
     return extract_dir
 
 
-def get_kaggle_api():
-    from kaggle.api.kaggle_api_extended import KaggleApi
+def get_kaggle_api(retries: int, wait_seconds: int, timeout_seconds: int):
+    def create_and_authenticate_api():
+        from kaggle.api.kaggle_api_extended import KaggleApi
 
-    api = KaggleApi()
-    api.authenticate()
-    return api
+        api = KaggleApi()
+        api.authenticate()
+        return api
+
+    return with_kaggle_retry(
+        "autenticando Kaggle",
+        retries,
+        wait_seconds,
+        timeout_seconds,
+        create_and_authenticate_api,
+    )
 
 
 class KaggleCallTimeout(TimeoutError):
@@ -379,7 +388,7 @@ def download_kaggle_sample(
     page_size: int,
     max_pages: int,
 ):
-    api = get_kaggle_api()
+    api = get_kaggle_api(retries, wait_seconds, timeout_seconds)
     dataset_slug = dataset_spec["slug"]
     selected = list_kaggle_sample_files(
         api=api,

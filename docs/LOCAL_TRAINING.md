@@ -11,10 +11,10 @@ Este guia deixa o DeepTrustShield pronto para rodar os notebooks localmente, sem
 
 ## Verificacao rapida
 
-Use o mesmo ambiente do worker, porque ele ja tem PyTorch, torchvision e timm:
+Use o ambiente dedicado de treino:
 
 ```bash
-worker/venv/bin/python scripts/check_training_env.py --load-models
+.venv-training/bin/python scripts/check_training_env.py --load-models
 ```
 
 O campo importante e:
@@ -26,17 +26,18 @@ cuda_device_0=NVIDIA GeForce RTX 4050...
 
 Se aparecer `cuda_available=False`, as analises e os notebooks vao cair para CPU.
 
-## Dependencias de notebook
+## Ambiente de notebook
 
-Instale o suporte de notebook no ambiente do worker:
+O ambiente recomendado para notebooks locais e `.venv-training`. Ele tem a stack do worker, PyTorch com CUDA, Jupyter e bibliotecas de treino:
 
 ```bash
-worker/venv/bin/python -m pip install -r requirements-training.txt
-worker/venv/bin/python -m ipykernel install --prefix worker/venv --name deeptrustshield-worker --display-name "DeepTrustShield worker"
-JUPYTER_DATA_DIR="$PWD/worker/venv/share/jupyter" worker/venv/bin/jupyter lab
+python -m venv .venv-training
+.venv-training/bin/python -m pip install --upgrade pip setuptools wheel
+.venv-training/bin/python -m pip install -r worker/requirements.txt -r requirements-training.txt
+.venv-training/bin/python -m ipykernel install --user --name deeptrustshield-training --display-name "DeepTrustShield Training (.venv-training)"
 ```
 
-No Jupyter, selecione o kernel `DeepTrustShield worker`.
+No VS Code, abra o notebook e selecione o kernel `DeepTrustShield Training (.venv-training)`.
 
 ## Notebooks principais
 
@@ -79,7 +80,7 @@ model/weights/mobilenet_v3_small_deepfake_v1.pth
 O DeepTrustShield usa CUDA automaticamente quando o PyTorch do ambiente retorna `cuda_available=True`. Para conferir o caminho completo do projeto, rode:
 
 ```bash
-worker/venv/bin/python scripts/check_training_env.py --load-models
+.venv-training/bin/python scripts/check_training_env.py --load-models
 ```
 
 Com a RTX 4050 ativa, o smoke test deve mostrar os modelos carregando em `device=cuda:0`.
