@@ -67,6 +67,23 @@ export async function analyzeLiveness(frames, sessionDefinition = null, required
   return response.json();
 }
 
+export async function createLivenessSession(detectorMode = 'mediapipe') {
+  const formData = new FormData();
+  formData.append('detector_mode', detectorMode);
+
+  const response = await fetch(`${LIVENESS_API_BASE}/session`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erro ao criar sessao de prova de vida');
+  }
+
+  return response.json();
+}
+
 export async function pollStatus(jobId, mode = 'image') {
   const apiBase = mode === 'video' ? VIDEO_API_BASE : IMAGE_API_BASE;
   const response = await fetch(`${apiBase}/status/${jobId}`);

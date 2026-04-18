@@ -1,0 +1,53 @@
+{
+  "model_version": "antispoof_mobilenet_v1",
+  "task": "face_anti_spoof",
+  "labels": {
+    "0": "live",
+    "1": "spoof"
+  },
+  "fold": 3,
+  "image_size": 224,
+  "threshold": 0.11499999999999999,
+  "fixed_threshold": 0.5,
+  "imagenet_mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "imagenet_std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "epoch": 8,
+  "metrics": {
+    "accuracy": 0.973404255319149,
+    "precision": 0.9940119760479041,
+    "recall": 0.9485714285714286,
+    "f1": 0.9707602339181286,
+    "auc": 0.9989765458422174,
+    "apcer": 0.05142857142857143,
+    "bpcer": 0.004975124378109453,
+    "acer": 0.02820184790334044,
+    "tn": 200,
+    "fp": 1,
+    "fn": 9,
+    "tp": 166
+  },
+  "best_threshold_metrics": {
+    "accuracy": 0.9893617021276596,
+    "precision": 0.9776536312849162,
+    "recall": 1.0,
+    "f1": 0.9887005649717514,
+    "auc": 0.9989765458422174,
+    "apcer": 0.0,
+    "bpcer": 0.01990049751243781,
+    "acer": 0.009950248756218905,
+    "tn": 197,
+    "fp": 4,
+    "fn": 0,
+    "tp": 175
+  },
+  "checkpoint": "model/weights/antispoof_mobilenet_v1_cv/fold_3/antispoof_mobilenet_v1_best.pth",
+  "onnx": "model/weights/antispoof_mobilenet_v1_cv/fold_3/antispoof_mobilenet_v1.onnx"
+}

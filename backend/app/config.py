@@ -31,6 +31,21 @@ class Settings(BaseSettings):
     max_image_upload_mb: int = 8
     max_frame_upload_mb: int = 3
     max_total_frames_upload_mb: int = 24
+
+    # Liveness challenge signing. Override in production with a long random value.
+    liveness_session_secret: str = "dev-liveness-session-secret-change-me"
+    liveness_session_ttl_seconds: int = 120
+    liveness_anti_spoof_enabled: bool = True
+    liveness_anti_spoof_threshold: float = 0.55
+    liveness_onnx_antispoof_enabled: bool = True
+    liveness_onnx_antispoof_path: str = (
+        f"{BASE_DIR}/model/weights/antispoof_mobilenet_v1_cv/fold_3/antispoof_mobilenet_v1.onnx"
+    )
+    liveness_onnx_antispoof_metadata_path: str = (
+        f"{BASE_DIR}/model/weights/antispoof_mobilenet_v1_cv/fold_3/antispoof_mobilenet_v1_metadata.json"
+    )
+    liveness_onnx_antispoof_aggregation: str = "p75"
+    liveness_onnx_antispoof_threshold: float = -1.0
     
     class Config:
         env_file = ".env"

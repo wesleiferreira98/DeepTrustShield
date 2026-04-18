@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Image, Upload as UploadIcon, Video } from 'lucide-react';
-import { analyzeLiveness } from '../services/api';
+import { analyzeLiveness, createLivenessSession } from '../services/api';
 import './Upload.css';
 
 const MAX_RECORDING_MS = 5000;
@@ -23,11 +23,26 @@ const MOUTH_OPEN_TARGET_FACTOR = 1.46;
 const MOUTH_OPEN_INTERMEDIATE_FACTOR = 1.24;
 const MOUTH_OPEN_MIN_ABS_DELTA = 0.065;
 const MOUTH_OPEN_CONSECUTIVE_FRAMES_REQUIRED = 2;
+const HEAD_TURN_TARGET_DELTA = 0.10;
+const HEAD_PITCH_TARGET_DELTA = 0.07;
 const MIXED_DISTANCE_PROGRESS_WEIGHT = 0.18;
 const MIXED_BLINK_PROGRESS_WEIGHT = 1.25;
 const MIXED_SMILE_PROGRESS_WEIGHT = 1.15;
+const MIXED_HEAD_POSE_PROGRESS_WEIGHT = 1.35;
 const MIN_CHALLENGES_PER_SESSION = 3;
 const MAX_CHALLENGES_PER_SESSION = 5;
+
+const SPOOF_REASON_LABELS = {
+  planar_motion_without_internal_face_change: 'movimento parece plano, sem mudanca interna do rosto',
+  screen_or_reflection_glare: 'brilho/reflexo suspeito de tela',
+  low_face_texture: 'textura facial baixa',
+  few_valid_face_frames: 'poucos frames validos com face',
+  no_valid_face_frames: 'nenhum frame valido com face',
+  model_spoof_score_high: 'modelo anti-spoof detectou foto/tela/replay',
+  model_file_missing: 'modelo anti-spoof nao encontrado no backend',
+  onnxruntime_missing: 'onnxruntime nao esta instalado no backend',
+  no_face_crops: 'nenhum recorte facial valido para o modelo anti-spoof',
+};
 
 const SCRIPT_CACHE = {};
 
@@ -144,6 +159,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
     faceWidth: null,
     smileScore: null,
     mouthOpenScore: null,
+    headYaw: null,
+    headPitch: null,
   });
 
   const videoRef = useRef(null);
@@ -159,6 +176,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
 
   const livenessStatusRef = useRef('pending');
   const livenessStartRef = useRef(null);
+  const livenessSessionRef = useRef(null);
   const challengesRef = useRef([]);
   const challengeIndexRef = useRef(0);
 
@@ -181,19 +199,30 @@ function Upload({ onImageUpload, onVideoUpload }) {
   const mouthOpenIntermediateReachedRef = useRef(false);
   const mouthOpenPeakRatioRef = useRef(1);
   const mouthOpenConsecutiveRef = useRef(0);
+  const headPoseBaselineRef = useRef(null);
+  const headYawMinRef = useRef(null);
+  const headYawMaxRef = useRef(null);
+  const headPitchMinRef = useRef(null);
+  const headPitchMaxRef = useRef(null);
 
   const detectorLabelMap = useMemo(() => ({ mediapipe: 'MediaPipe', none: 'Backend' }), []);
 
-  const buildBackendLivenessSession = useCallback(() => ({
-    detector_mode: faceValidationMode,
-    challenges: challengesRef.current.map((challenge) => ({
-      id: challenge.id,
-      label: challenge.label,
-      hint: challenge.hint,
-      requirements: Array.isArray(challenge.requirements) ? challenge.requirements : [],
-      targets: challenge.targets || {},
-    })),
-  }), [faceValidationMode]);
+  const buildBackendLivenessSession = useCallback(() => {
+    if (livenessSessionRef.current) {
+      return livenessSessionRef.current;
+    }
+
+    return {
+      detector_mode: faceValidationMode,
+      challenges: challengesRef.current.map((challenge) => ({
+        id: challenge.id,
+        label: challenge.label,
+        hint: challenge.hint,
+        requirements: Array.isArray(challenge.requirements) ? challenge.requirements : [],
+        targets: challenge.targets || {},
+      })),
+    };
+  }, [faceValidationMode]);
 
   const stopFaceDetection = useCallback(() => {
     if (detectorIntervalRef.current) {
@@ -231,6 +260,11 @@ function Upload({ onImageUpload, onVideoUpload }) {
     mouthOpenIntermediateReachedRef.current = false;
     mouthOpenPeakRatioRef.current = 1;
     mouthOpenConsecutiveRef.current = 0;
+    headPoseBaselineRef.current = null;
+    headYawMinRef.current = null;
+    headYawMaxRef.current = null;
+    headPitchMinRef.current = null;
+    headPitchMaxRef.current = null;
 
     setEarDebug({
       ear: null,
@@ -241,6 +275,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
       faceWidth: null,
       smileScore: null,
       mouthOpenScore: null,
+      headYaw: null,
+      headPitch: null,
     });
   }, []);
 
@@ -261,83 +297,67 @@ function Upload({ onImageUpload, onVideoUpload }) {
 
   const buildChallenges = useCallback(() => {
     const blinkTarget = Math.random() > 0.5 ? 2 : 1;
-    const pool = [
+    const mouthPool = [
       {
-        id: 'blink',
-        requirements: ['blink'],
-        label: `Piscar ${blinkTarget}x`,
-        hint: `Olhe diretamente para a camera e pisque ${blinkTarget} vez(es) pausadamente.`,
-        targets: { blink: blinkTarget },
-        weight: 1.35,
+        id: 'mouth_head_left',
+        requirements: ['mouth_open', 'head_left'],
+        label: 'Abrir a boca + Virar para a esquerda',
+        hint: 'Abra a boca e vire levemente o rosto para a esquerda.',
+        targets: { mouth_open: MOUTH_OPEN_TARGET_FACTOR, head_left: HEAD_TURN_TARGET_DELTA },
+        weight: 1.2,
       },
       {
-        id: 'distance',
-        requirements: ['distance'],
-        label: 'Aproximar/Afastar',
-        hint: 'Aproxime e afaste o rosto lentamente, mantendo os olhos na camera.',
-        targets: { distance: DISTANCE_TARGET_RANGE_RATIO },
-        weight: 0.55,
+        id: 'mouth_head_right',
+        requirements: ['mouth_open', 'head_right'],
+        label: 'Abrir a boca + Virar para a direita',
+        hint: 'Abra a boca e vire levemente o rosto para a direita.',
+        targets: { mouth_open: MOUTH_OPEN_TARGET_FACTOR, head_right: HEAD_TURN_TARGET_DELTA },
+        weight: 1.2,
       },
+    ];
+    const supportPool = [
       {
-        id: 'mouth_open',
+        id: 'mouth_hold',
         requirements: ['mouth_open'],
         label: 'Abrir a boca',
         hint: 'Olhe para a camera e abra a boca gradualmente ate ficar bem visivel.',
         targets: { mouth_open: MOUTH_OPEN_TARGET_FACTOR },
-        weight: 1.05,
-      },
-      {
-        id: 'smile',
-        requirements: ['smile'],
-        label: 'Sorrir',
-        hint: 'Olhe para a camera e sorria de forma natural por um instante.',
-        targets: { smile: SMILE_TARGET_FACTOR },
-        weight: 1.15,
-      },
-      {
-        id: 'smile_hold',
-        requirements: ['smile_hold'],
-        label: 'Sorrir e segurar',
-        hint: 'Olhe para a camera, sorria claramente e segure por um instante.',
-        targets: { smile_hold: SMILE_TARGET_FACTOR },
-        weight: 1.05,
-      },
-      {
-        id: 'blink_smile',
-        requirements: ['blink', 'smile'],
-        label: `Piscar ${blinkTarget}x + Sorrir`,
-        hint: `Olhando para a camera, pisque ${blinkTarget} vez(es) pausadamente e sorria.`,
-        targets: { blink: blinkTarget, smile: SMILE_TARGET_FACTOR },
-        weight: 1.2,
-      },
-      {
-        id: 'distance_smile',
-        requirements: ['distance', 'smile'],
-        label: 'Aproximar/Afastar + Sorrir',
-        hint: 'Aproxime/afaste o rosto devagar e sorria olhando para a camera.',
-        targets: { distance: DISTANCE_TARGET_RANGE_RATIO, smile: SMILE_TARGET_FACTOR },
-        weight: 0.7,
-      },
-      {
-        id: 'blink_distance',
-        requirements: ['blink', 'distance'],
-        label: `Piscar ${blinkTarget}x + Aproximar/Afastar`,
-        hint: `Olhando para a camera, pisque ${blinkTarget} vez(es) pausadamente e aproxime/afaste o rosto devagar.`,
-        targets: { blink: blinkTarget, distance: DISTANCE_TARGET_RANGE_RATIO },
         weight: 0.75,
+      },
+      {
+        id: 'blink_head',
+        requirements: ['blink', 'head_left'],
+        label: `Piscar ${blinkTarget}x + Virar`,
+        hint: `Olhando para a camera, pisque ${blinkTarget} vez(es) e vire levemente para a esquerda.`,
+        targets: { blink: blinkTarget, head_left: HEAD_TURN_TARGET_DELTA },
+        weight: 0.5,
+      },
+      {
+        id: 'distance_head',
+        requirements: ['distance', 'head_right'],
+        label: 'Aproximar/Afastar + Virar',
+        hint: 'Aproxime/afaste o rosto devagar e vire levemente para a direita.',
+        targets: { distance: DISTANCE_TARGET_RANGE_RATIO, head_right: HEAD_TURN_TARGET_DELTA },
+        weight: 0.55,
       },
     ];
 
     const total = MIN_CHALLENGES_PER_SESSION
       + Math.floor(Math.random() * (MAX_CHALLENGES_PER_SESSION - MIN_CHALLENGES_PER_SESSION + 1));
+    const mandatory = pickWeightedChallenges(mouthPool, 1);
+    const remainingPool = [...mouthPool, ...supportPool].filter((challenge) => (
+      challenge.id !== mandatory[0].id
+    ));
 
-    return pickWeightedChallenges(pool, total);
+    return [...mandatory, ...pickWeightedChallenges(remainingPool, total - mandatory.length)]
+      .sort(() => Math.random() - 0.5);
   }, []);
 
-  const resetLiveness = useCallback((detectorMode = faceValidationMode) => {
+  const resetLiveness = useCallback((detectorMode = faceValidationMode, serverSession = null) => {
     resetChallengeInternals();
 
     if (detectorMode === 'none') {
+      livenessSessionRef.current = null;
       livenessStatusRef.current = 'unavailable';
       setLivenessStatus('unavailable');
       setChallengeStep({ index: 0, total: 0 });
@@ -353,7 +373,13 @@ function Upload({ onImageUpload, onVideoUpload }) {
       return;
     }
 
-    challengesRef.current = buildChallenges();
+    if (serverSession && Array.isArray(serverSession.challenges) && serverSession.challenges.length > 0) {
+      livenessSessionRef.current = serverSession;
+      challengesRef.current = serverSession.challenges;
+    } else {
+      livenessSessionRef.current = null;
+      challengesRef.current = buildChallenges();
+    }
     setChallengeList(challengesRef.current.map((item) => item.label));
     challengeIndexRef.current = 0;
     livenessStartRef.current = Date.now();
@@ -421,8 +447,16 @@ function Upload({ onImageUpload, onVideoUpload }) {
     const upperLip = landmarks[13];
     const lowerLip = landmarks[14];
     const mouthOpenScore = toDistance(upperLip, lowerLip) / eyeDist;
+    const noseTip = landmarks[1];
+    if (!noseTip) {
+      return null;
+    }
+    const eyeMidX = (leftEye.x + rightEye.x) / 2;
+    const eyeMidY = (leftEye.y + rightEye.y) / 2;
+    const headYaw = (noseTip.x - eyeMidX) / eyeDist;
+    const headPitch = (noseTip.y - eyeMidY) / eyeDist;
 
-    return { ear, faceWidth, smileScore, mouthOpenScore };
+    return { ear, faceWidth, smileScore, mouthOpenScore, headYaw, headPitch };
   }, [calcEAR, toDistance]);
 
   const completeCurrentChallenge = useCallback(() => {
@@ -462,7 +496,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
       return;
     }
 
-    const { ear, faceWidth, smileScore, mouthOpenScore } = metrics;
+    const { ear, faceWidth, smileScore, mouthOpenScore, headYaw, headPitch } = metrics;
 
     if (ear > 0.18) {
       eyeBaselineRef.current = (eyeBaselineRef.current * 0.9) + (ear * 0.1);
@@ -529,6 +563,19 @@ function Upload({ onImageUpload, onVideoUpload }) {
       && mouthOpenScore <= mouthOpenBaselineRef.current * 1.03
     ) {
       mouthOpenBaselineRef.current = (mouthOpenBaselineRef.current * 0.98) + (mouthOpenScore * 0.02);
+    }
+
+    if (headPoseBaselineRef.current === null) {
+      headPoseBaselineRef.current = { yaw: headYaw, pitch: headPitch };
+      headYawMinRef.current = headYaw;
+      headYawMaxRef.current = headYaw;
+      headPitchMinRef.current = headPitch;
+      headPitchMaxRef.current = headPitch;
+    } else {
+      headYawMinRef.current = Math.min(headYawMinRef.current, headYaw);
+      headYawMaxRef.current = Math.max(headYawMaxRef.current, headYaw);
+      headPitchMinRef.current = Math.min(headPitchMinRef.current, headPitch);
+      headPitchMaxRef.current = Math.max(headPitchMaxRef.current, headPitch);
     }
 
     const currentChallenge = challengesRef.current[challengeIndexRef.current];
@@ -625,18 +672,45 @@ function Upload({ onImageUpload, onVideoUpload }) {
     );
     const mouthOpenPassed = mouthOpenConsecutiveRef.current >= MOUTH_OPEN_CONSECUTIVE_FRAMES_REQUIRED;
 
+    const headBaseline = headPoseBaselineRef.current || { yaw: headYaw, pitch: headPitch };
+    const headLeftTarget = currentChallenge.targets?.head_left ?? HEAD_TURN_TARGET_DELTA;
+    const headRightTarget = currentChallenge.targets?.head_right ?? HEAD_TURN_TARGET_DELTA;
+    const headUpTarget = currentChallenge.targets?.head_up ?? HEAD_PITCH_TARGET_DELTA;
+    const headDownTarget = currentChallenge.targets?.head_down ?? HEAD_PITCH_TARGET_DELTA;
+    const headLeftDelta = Math.max(0, headBaseline.yaw - headYawMinRef.current);
+    const headRightDelta = Math.max(0, headYawMaxRef.current - headBaseline.yaw);
+    const headUpDelta = Math.max(0, headBaseline.pitch - headPitchMinRef.current);
+    const headDownDelta = Math.max(0, headPitchMaxRef.current - headBaseline.pitch);
+    const headLeftProgress = Math.min(100, (headLeftDelta / Math.max(headLeftTarget, 1e-4)) * 100);
+    const headRightProgress = Math.min(100, (headRightDelta / Math.max(headRightTarget, 1e-4)) * 100);
+    const headUpProgress = Math.min(100, (headUpDelta / Math.max(headUpTarget, 1e-4)) * 100);
+    const headDownProgress = Math.min(100, (headDownDelta / Math.max(headDownTarget, 1e-4)) * 100);
+    const headLeftPassed = headLeftDelta >= headLeftTarget;
+    const headRightPassed = headRightDelta >= headRightTarget;
+    const headUpPassed = headUpDelta >= headUpTarget;
+    const headDownPassed = headDownDelta >= headDownTarget;
+
     const progressByType = {
       blink: blinkProgress,
       distance: distanceProgress,
       smile: smileProgress,
       smile_hold: smileProgress,
       mouth_open: mouthOpenProgress,
+      head_left: headLeftProgress,
+      head_right: headRightProgress,
+      head_up: headUpProgress,
+      head_down: headDownProgress,
     };
     const progressWeightByType = {
       blink: MIXED_BLINK_PROGRESS_WEIGHT,
       distance: MIXED_DISTANCE_PROGRESS_WEIGHT,
       smile: MIXED_SMILE_PROGRESS_WEIGHT,
       smile_hold: MIXED_SMILE_PROGRESS_WEIGHT,
+      mouth_open: MIXED_HEAD_POSE_PROGRESS_WEIGHT,
+      head_left: MIXED_HEAD_POSE_PROGRESS_WEIGHT,
+      head_right: MIXED_HEAD_POSE_PROGRESS_WEIGHT,
+      head_up: MIXED_HEAD_POSE_PROGRESS_WEIGHT,
+      head_down: MIXED_HEAD_POSE_PROGRESS_WEIGHT,
     };
     const passedByType = {
       blink: blinkPassed,
@@ -644,6 +718,10 @@ function Upload({ onImageUpload, onVideoUpload }) {
       smile: smilePassed,
       smile_hold: smileHoldPassed,
       mouth_open: mouthOpenPassed,
+      head_left: headLeftPassed,
+      head_right: headRightPassed,
+      head_up: headUpPassed,
+      head_down: headDownPassed,
     };
     const required = Array.isArray(currentChallenge.requirements) ? currentChallenge.requirements : [];
     const requirementProgress = required.map((key) => ({
@@ -679,6 +757,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
       faceWidth,
       smileScore,
       mouthOpenScore,
+      headYaw,
+      headPitch,
     });
   }, [completeCurrentChallenge, computeMetrics]);
 
@@ -888,8 +968,9 @@ function Upload({ onImageUpload, onVideoUpload }) {
 
         detectorRef.current = mpDetector;
         setFaceValidationMode('mediapipe');
-        resetLiveness('mediapipe');
-        setVideoStep('MediaPipe ativo. Siga os desafios de prova de vida.');
+        const serverSession = await createLivenessSession('mediapipe');
+        resetLiveness('mediapipe', serverSession);
+        setVideoStep('Sessao segura criada. Siga os desafios de prova de vida.');
       } catch (error) {
         detectorRef.current = null;
         setFaceValidationMode('none');
@@ -1002,15 +1083,24 @@ function Upload({ onImageUpload, onVideoUpload }) {
         try {
           const livenessResult = await analyzeLiveness(frames, sessionDefinition, requiredChecks);
           if (!livenessResult.passed) {
-            setBackendLivenessStatus('warning');
-            setCameraError('Backend de liveness reprovou esta captura, mas a analise continuara.');
+            setBackendLivenessStatus('failed');
+            const spoofReasons = livenessResult.spoof_analysis?.reasons || [];
+            const translatedReasons = spoofReasons
+              .map((reason) => SPOOF_REASON_LABELS[reason] || reason)
+              .join('; ');
+            const detail = translatedReasons ? ` Motivo: ${translatedReasons}.` : '';
+            setCameraError(`Backend de liveness reprovou esta captura.${detail} Refaça a prova de vida com os movimentos pedidos.`);
+            setVideoStep('Prova de vida reprovada');
+            return;
           } else {
             setBackendLivenessStatus('passed');
           }
         } catch (error) {
-          setBackendLivenessStatus('warning');
+          setBackendLivenessStatus('failed');
           const message = error instanceof Error ? error.message : 'Falha no backend de liveness';
-          setCameraError(`${message}. A analise continuara sem bloquear o envio.`);
+          setCameraError(`${message}. Refaça a captura para validar a prova de vida.`);
+          setVideoStep('Prova de vida reprovada');
+          return;
         }
       }
       setVideoStep('Enviando frames para analise...');
@@ -1338,6 +1428,8 @@ function Upload({ onImageUpload, onVideoUpload }) {
                 <span>Face width: {earDebug.faceWidth !== null ? earDebug.faceWidth.toFixed(3) : '--'}</span>
                 <span>Smile score: {earDebug.smileScore !== null ? earDebug.smileScore.toFixed(3) : '--'}</span>
                 <span>Mouth open: {earDebug.mouthOpenScore !== null ? earDebug.mouthOpenScore.toFixed(3) : '--'}</span>
+                <span>Head yaw: {earDebug.headYaw !== null ? earDebug.headYaw.toFixed(3) : '--'}</span>
+                <span>Head pitch: {earDebug.headPitch !== null ? earDebug.headPitch.toFixed(3) : '--'}</span>
               </div>
             )}
           </div>

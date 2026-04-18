@@ -13,3 +13,4 @@ aiofiles>=23.2.1
 mediapipe>=0.10.14
 opencv-python-headless>=4.10.0.84
 numpy>=1.26.0
+onnxruntime>=1.18.0

@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from app.config import get_settings
+from app.services.antispoof_model_service import analyze_antispoof_crops
 
 cv2 = None
 mp = None
@@ -24,6 +25,12 @@ SMILE_HOLD_MIN_CONSECUTIVE_FRAMES = 3
 MOUTH_OPEN_TARGET_FACTOR = 1.46
 MOUTH_OPEN_INTERMEDIATE_FACTOR = 1.24
 MOUTH_OPEN_MIN_ABS_DELTA = 0.065
+HEAD_TURN_TARGET_DELTA = 0.10
+HEAD_PITCH_TARGET_DELTA = 0.07
+ANTI_SPOOF_INTERNAL_MOTION_MIN = 0.085
+ANTI_SPOOF_GEOMETRIC_MOTION_MIN = 0.13
+ANTI_SPOOF_LOW_TEXTURE_LAPLACIAN = 12.0
+ANTI_SPOOF_HIGH_GLARE_RATIO = 0.08
 
 
 @dataclass
@@ -32,9 +39,21 @@ class FrameMetrics:
     face_width: float
     smile_ratio: float
     mouth_open_ratio: float
+    head_yaw: float
+    head_pitch: float
 
 
-SUPPORTED_LIVENESS_REQUIREMENTS = {"blink", "distance", "smile", "smile_hold", "mouth_open"}
+SUPPORTED_LIVENESS_REQUIREMENTS = {
+    "blink",
+    "distance",
+    "smile",
+    "smile_hold",
+    "mouth_open",
+    "head_left",
+    "head_right",
+    "head_up",
+    "head_down",
+}
 
 
 class _LegacyFaceMeshWrapper:
@@ -123,6 +142,7 @@ def _extract_metrics(landmarks) -> FrameMetrics | None:
         lower_lip = landmarks[14]
         left_eye = landmarks[33]
         right_eye = landmarks[263]
+        nose_tip = landmarks[1]
     except Exception:
         return None
 
@@ -133,8 +153,19 @@ def _extract_metrics(landmarks) -> FrameMetrics | None:
     mouth_width = _distance(mouth_left, mouth_right)
     smile_ratio = mouth_width / eye_dist
     mouth_open_ratio = _distance(upper_lip, lower_lip) / eye_dist
+    eye_mid_x = (left_eye.x + right_eye.x) / 2.0
+    eye_mid_y = (left_eye.y + right_eye.y) / 2.0
+    head_yaw = (nose_tip.x - eye_mid_x) / eye_dist
+    head_pitch = (nose_tip.y - eye_mid_y) / eye_dist
 
-    return FrameMetrics(ear=ear, face_width=face_width, smile_ratio=smile_ratio, mouth_open_ratio=mouth_open_ratio)
+    return FrameMetrics(
+        ear=ear,
+        face_width=face_width,
+        smile_ratio=smile_ratio,
+        mouth_open_ratio=mouth_open_ratio,
+        head_yaw=head_yaw,
+        head_pitch=head_pitch,
+    )
 
 
 def _count_blinks(ear_values: list[float]) -> tuple[int, float, float]:
@@ -288,10 +319,14 @@ def _build_temporal_frame_metrics(all_frame_metrics: list[FrameMetrics | None]) 
                     "face_width": None,
                     "smile_ratio": None,
                     "mouth_open_ratio": None,
+                    "head_yaw": None,
+                    "head_pitch": None,
                     "delta_ear": None,
                     "delta_face_width": None,
                     "delta_smile_ratio": None,
                     "delta_mouth_open_ratio": None,
+                    "delta_head_yaw": None,
+                    "delta_head_pitch": None,
                     "movement_score": None,
                 }
             )
@@ -301,6 +336,8 @@ def _build_temporal_frame_metrics(all_frame_metrics: list[FrameMetrics | None]) 
         delta_face_width = None
         delta_smile_ratio = None
         delta_mouth_open_ratio = None
+        delta_head_yaw = None
+        delta_head_pitch = None
         movement_score = 0.0
 
         if previous_valid is not None:
@@ -308,11 +345,15 @@ def _build_temporal_frame_metrics(all_frame_metrics: list[FrameMetrics | None]) 
             delta_face_width = float(frame_metrics.face_width - previous_valid.face_width)
             delta_smile_ratio = float(frame_metrics.smile_ratio - previous_valid.smile_ratio)
             delta_mouth_open_ratio = float(frame_metrics.mouth_open_ratio - previous_valid.mouth_open_ratio)
+            delta_head_yaw = float(frame_metrics.head_yaw - previous_valid.head_yaw)
+            delta_head_pitch = float(frame_metrics.head_pitch - previous_valid.head_pitch)
             movement_score = float(
                 abs(delta_ear)
                 + abs(delta_face_width)
                 + abs(delta_smile_ratio)
                 + abs(delta_mouth_open_ratio)
+                + abs(delta_head_yaw)
+                + abs(delta_head_pitch)
             )
 
         payload.append(
@@ -323,10 +364,14 @@ def _build_temporal_frame_metrics(all_frame_metrics: list[FrameMetrics | None]) 
                 "face_width": frame_metrics.face_width,
                 "smile_ratio": frame_metrics.smile_ratio,
                 "mouth_open_ratio": frame_metrics.mouth_open_ratio,
+                "head_yaw": frame_metrics.head_yaw,
+                "head_pitch": frame_metrics.head_pitch,
                 "delta_ear": delta_ear,
                 "delta_face_width": delta_face_width,
                 "delta_smile_ratio": delta_smile_ratio,
                 "delta_mouth_open_ratio": delta_mouth_open_ratio,
+                "delta_head_yaw": delta_head_yaw,
+                "delta_head_pitch": delta_head_pitch,
                 "movement_score": movement_score,
             }
         )
@@ -362,6 +407,161 @@ def _calculate_temporal_consistency(frame_metrics: list[dict[str, Any]]) -> dict
     }
 
 
+def _extract_face_crop(image, landmarks, margin_ratio: float = 0.18):
+    height, width = image.shape[:2]
+    xs = [point.x for point in landmarks if 0.0 <= point.x <= 1.0]
+    ys = [point.y for point in landmarks if 0.0 <= point.y <= 1.0]
+    if not xs or not ys:
+        return None
+
+    left = max(0, int((min(xs) - margin_ratio) * width))
+    right = min(width, int((max(xs) + margin_ratio) * width))
+    top = max(0, int((min(ys) - margin_ratio) * height))
+    bottom = min(height, int((max(ys) + margin_ratio) * height))
+    if right - left < 24 or bottom - top < 24:
+        return None
+    return image[top:bottom, left:right]
+
+
+def _calculate_spoof_frame_features(image, landmarks) -> dict[str, Any] | None:
+    crop = _extract_face_crop(image, landmarks)
+    if crop is None:
+        return None
+
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    saturation = hsv[:, :, 1]
+    value = hsv[:, :, 2]
+    laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    glare_ratio = float(np.mean((value > 245) & (saturation < 45)))
+    edge_density = float(np.mean(cv2.Canny(gray, 80, 160) > 0))
+
+    return {
+        "laplacian_var": laplacian_var,
+        "glare_ratio": glare_ratio,
+        "edge_density": edge_density,
+    }
+
+
+def _build_default_spoof_analysis(enabled: bool) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "passed": not enabled,
+        "score": 0.0 if enabled else 1.0,
+        "threshold": get_settings().liveness_anti_spoof_threshold,
+        "reasons": ["no_valid_face_frames"] if enabled else [],
+        "signals": {},
+    }
+
+
+def _combine_spoof_analyses(heuristic_analysis: dict[str, Any], model_analysis: dict[str, Any]) -> dict[str, Any]:
+    model_enabled = bool(model_analysis.get("enabled"))
+    heuristic_enabled = bool(heuristic_analysis.get("enabled"))
+    passed = bool(heuristic_analysis.get("passed", True)) and (
+        bool(model_analysis.get("passed", True)) if model_enabled else True
+    )
+    reasons = [
+        *heuristic_analysis.get("reasons", []),
+        *model_analysis.get("reasons", []),
+    ]
+    model_score = float(model_analysis.get("score", 1.0)) if model_enabled else 1.0
+    heuristic_score = float(heuristic_analysis.get("score", 1.0)) if heuristic_enabled else 1.0
+
+    return {
+        "enabled": heuristic_enabled or model_enabled,
+        "passed": passed,
+        "score": min(heuristic_score, model_score),
+        "threshold": heuristic_analysis.get("threshold"),
+        "reasons": reasons,
+        "heuristic": heuristic_analysis,
+        "model": model_analysis,
+    }
+
+
+def _analyze_spoof_signals(
+    *,
+    settings,
+    valid_frames: int,
+    total_frames: int,
+    ear_values: list[float],
+    mouth_open_abs_delta: float,
+    smile_abs_delta: float,
+    range_ratio: float,
+    head_left_delta: float,
+    head_right_delta: float,
+    head_up_delta: float,
+    head_down_delta: float,
+    frame_spoof_features: list[dict[str, Any]],
+) -> dict[str, Any]:
+    threshold = settings.liveness_anti_spoof_threshold
+    if not settings.liveness_anti_spoof_enabled:
+        return {
+            "enabled": False,
+            "passed": True,
+            "score": 1.0,
+            "threshold": threshold,
+            "reasons": [],
+            "signals": {},
+        }
+
+    ear_range = float(max(ear_values) - min(ear_values)) if ear_values else 0.0
+    internal_motion = float(ear_range + mouth_open_abs_delta + smile_abs_delta)
+    geometric_motion = float(
+        range_ratio
+        + max(head_left_delta, head_right_delta)
+        + max(head_up_delta, head_down_delta)
+    )
+    median_laplacian = float(np.median([item["laplacian_var"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_glare_ratio = float(np.median([item["glare_ratio"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_edge_density = float(np.median([item["edge_density"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+
+    score = 1.0
+    reasons: list[str] = []
+
+    if valid_frames < max(3, int(total_frames * 0.5)):
+        score -= 0.25
+        reasons.append("few_valid_face_frames")
+
+    planar_motion_suspected = (
+        geometric_motion >= ANTI_SPOOF_GEOMETRIC_MOTION_MIN
+        and internal_motion < ANTI_SPOOF_INTERNAL_MOTION_MIN
+    )
+    if planar_motion_suspected:
+        score -= 0.50
+        reasons.append("planar_motion_without_internal_face_change")
+
+    if median_laplacian and median_laplacian < ANTI_SPOOF_LOW_TEXTURE_LAPLACIAN:
+        score -= 0.12
+        reasons.append("low_face_texture")
+
+    if median_glare_ratio > ANTI_SPOOF_HIGH_GLARE_RATIO:
+        score -= 0.15
+        reasons.append("screen_or_reflection_glare")
+
+    score = float(max(0.0, min(1.0, score)))
+
+    return {
+        "enabled": True,
+        "passed": bool(score >= threshold),
+        "score": score,
+        "threshold": threshold,
+        "reasons": reasons,
+        "signals": {
+            "internal_motion": internal_motion,
+            "internal_motion_min": ANTI_SPOOF_INTERNAL_MOTION_MIN,
+            "geometric_motion": geometric_motion,
+            "geometric_motion_min": ANTI_SPOOF_GEOMETRIC_MOTION_MIN,
+            "ear_range": ear_range,
+            "mouth_open_abs_delta": mouth_open_abs_delta,
+            "smile_abs_delta": smile_abs_delta,
+            "median_laplacian_var": median_laplacian,
+            "median_glare_ratio": median_glare_ratio,
+            "median_edge_density": median_edge_density,
+            "valid_frame_ratio": float(valid_frames / total_frames) if total_frames else 0.0,
+        },
+    }
+
+
 def _build_default_checks() -> dict[str, dict[str, Any]]:
     return {
         "blink": {"passed": False, "count": 0, "target": 1},
@@ -369,6 +569,10 @@ def _build_default_checks() -> dict[str, dict[str, Any]]:
         "smile": {"passed": False, "max_ratio": 0.0, "target": SMILE_TARGET_FACTOR},
         "smile_hold": {"passed": False, "max_ratio": 0.0, "target": SMILE_TARGET_FACTOR},
         "mouth_open": {"passed": False, "max_ratio": 0.0, "target": MOUTH_OPEN_TARGET_FACTOR},
+        "head_left": {"passed": False, "delta": 0.0, "target": HEAD_TURN_TARGET_DELTA},
+        "head_right": {"passed": False, "delta": 0.0, "target": HEAD_TURN_TARGET_DELTA},
+        "head_up": {"passed": False, "delta": 0.0, "target": HEAD_PITCH_TARGET_DELTA},
+        "head_down": {"passed": False, "delta": 0.0, "target": HEAD_PITCH_TARGET_DELTA},
     }
 
 
@@ -410,6 +614,8 @@ def _evaluate_challenges(
                     )
                 elif requirement == "mouth_open":
                     base["passed"] = base.get("max_ratio", 0.0) >= targets[requirement]
+                elif requirement in {"head_left", "head_right", "head_up", "head_down"}:
+                    base["passed"] = base.get("delta", 0.0) >= targets[requirement]
 
             checks[requirement] = base
             if requirement not in required_union:
@@ -434,11 +640,14 @@ def analyze_liveness_frames(
     session_definition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _ensure_liveness_dependencies()
+    runtime_settings = get_settings()
 
     if required_checks is None:
         required_checks = ["blink", "distance", "smile"]
 
     all_frame_metrics: list[FrameMetrics | None] = []
+    frame_spoof_features: list[dict[str, Any]] = []
+    antispoof_crops: list[Any] = []
     total_frames = len(frame_bytes_list)
 
     face_detector = _create_face_detector()
@@ -459,6 +668,12 @@ def analyze_liveness_frames(
             frame_metrics = _extract_metrics(landmarks)
             if frame_metrics:
                 all_frame_metrics.append(frame_metrics)
+                spoof_features = _calculate_spoof_frame_features(image, landmarks)
+                if spoof_features:
+                    frame_spoof_features.append(spoof_features)
+                face_crop = _extract_face_crop(image, landmarks)
+                if face_crop is not None:
+                    antispoof_crops.append(face_crop)
             else:
                 all_frame_metrics.append(None)
     finally:
@@ -469,6 +684,11 @@ def analyze_liveness_frames(
     if valid_frames == 0:
         checks = _build_default_checks()
         challenge_results, resolved_required = _evaluate_challenges(session_definition, checks)
+        model_spoof_analysis = analyze_antispoof_crops([], runtime_settings)
+        spoof_analysis = _combine_spoof_analyses(
+            _build_default_spoof_analysis(runtime_settings.liveness_anti_spoof_enabled),
+            model_spoof_analysis,
+        )
         return {
             "passed": False,
             "checks": checks,
@@ -476,10 +696,12 @@ def analyze_liveness_frames(
             "session": session_definition,
             "challenge_results": challenge_results,
             "frame_metrics": _build_temporal_frame_metrics(all_frame_metrics),
+            "spoof_analysis": spoof_analysis,
             "summary": {
                 "total_frames": total_frames,
                 "valid_frames": 0,
                 "face_detected_frames": 0,
+                "anti_spoof": spoof_analysis,
                 "temporal_consistency": {
                     "mean_movement_score": 0.0,
                     "max_movement_score": 0.0,
@@ -494,6 +716,8 @@ def analyze_liveness_frames(
     face_widths = [m.face_width for m in metrics]
     smile_ratios = [m.smile_ratio for m in metrics]
     mouth_open_ratios = [m.mouth_open_ratio for m in metrics]
+    head_yaws = [m.head_yaw for m in metrics]
+    head_pitches = [m.head_pitch for m in metrics]
 
     blink_events, ear_baseline, ear_threshold = _detect_blink_events(indexed_metrics)
     blink_count = len(blink_events)
@@ -552,10 +776,55 @@ def analyze_liveness_frames(
         and mouth_open_abs_delta >= MOUTH_OPEN_MIN_ABS_DELTA
     )
 
+    head_yaw_baseline = float(indexed_metrics[0][1].head_yaw) if indexed_metrics else 0.0
+    head_pitch_baseline = float(indexed_metrics[0][1].head_pitch) if indexed_metrics else 0.0
+    head_yaw_min = float(min(head_yaws)) if head_yaws else 0.0
+    head_yaw_max = float(max(head_yaws)) if head_yaws else 0.0
+    head_pitch_min = float(min(head_pitches)) if head_pitches else 0.0
+    head_pitch_max = float(max(head_pitches)) if head_pitches else 0.0
+    head_left_delta = max(0.0, head_yaw_baseline - head_yaw_min)
+    head_right_delta = max(0.0, head_yaw_max - head_yaw_baseline)
+    head_up_delta = max(0.0, head_pitch_baseline - head_pitch_min)
+    head_down_delta = max(0.0, head_pitch_max - head_pitch_baseline)
+    head_left_passed = head_left_delta >= HEAD_TURN_TARGET_DELTA
+    head_right_passed = head_right_delta >= HEAD_TURN_TARGET_DELTA
+    head_up_passed = head_up_delta >= HEAD_PITCH_TARGET_DELTA
+    head_down_passed = head_down_delta >= HEAD_PITCH_TARGET_DELTA
+    heuristic_spoof_analysis = _analyze_spoof_signals(
+        settings=runtime_settings,
+        valid_frames=valid_frames,
+        total_frames=total_frames,
+        ear_values=ear_values,
+        mouth_open_abs_delta=mouth_open_abs_delta,
+        smile_abs_delta=smile_abs_delta,
+        range_ratio=range_ratio,
+        head_left_delta=head_left_delta,
+        head_right_delta=head_right_delta,
+        head_up_delta=head_up_delta,
+        head_down_delta=head_down_delta,
+        frame_spoof_features=frame_spoof_features,
+    )
+    model_spoof_analysis = analyze_antispoof_crops(antispoof_crops, runtime_settings)
+    spoof_analysis = _combine_spoof_analyses(heuristic_spoof_analysis, model_spoof_analysis)
+
     frame_metrics_response = _build_temporal_frame_metrics(all_frame_metrics)
     temporal_consistency = _calculate_temporal_consistency(frame_metrics_response)
 
     checks = {
+        "anti_spoof": {
+            "passed": spoof_analysis["passed"],
+            "score": spoof_analysis["score"],
+            "threshold": spoof_analysis["threshold"],
+            "reasons": spoof_analysis["reasons"],
+        },
+        "anti_spoof_model": {
+            "passed": model_spoof_analysis["passed"],
+            "score": model_spoof_analysis["score"],
+            "p_spoof": model_spoof_analysis["p_spoof"],
+            "threshold": model_spoof_analysis["threshold"],
+            "aggregation": model_spoof_analysis["aggregation"],
+            "reasons": model_spoof_analysis["reasons"],
+        },
         "blink": {
             "passed": blink_passed,
             "count": blink_count,
@@ -609,6 +878,38 @@ def analyze_liveness_frames(
             "intermediate_target_ratio": MOUTH_OPEN_INTERMEDIATE_FACTOR,
             "peak_frame": mouth_open_peak_frame,
         },
+        "head_left": {
+            "passed": head_left_passed,
+            "delta": head_left_delta,
+            "target": HEAD_TURN_TARGET_DELTA,
+            "baseline": head_yaw_baseline,
+            "min_yaw": head_yaw_min,
+            "max_yaw": head_yaw_max,
+        },
+        "head_right": {
+            "passed": head_right_passed,
+            "delta": head_right_delta,
+            "target": HEAD_TURN_TARGET_DELTA,
+            "baseline": head_yaw_baseline,
+            "min_yaw": head_yaw_min,
+            "max_yaw": head_yaw_max,
+        },
+        "head_up": {
+            "passed": head_up_passed,
+            "delta": head_up_delta,
+            "target": HEAD_PITCH_TARGET_DELTA,
+            "baseline": head_pitch_baseline,
+            "min_pitch": head_pitch_min,
+            "max_pitch": head_pitch_max,
+        },
+        "head_down": {
+            "passed": head_down_passed,
+            "delta": head_down_delta,
+            "target": HEAD_PITCH_TARGET_DELTA,
+            "baseline": head_pitch_baseline,
+            "min_pitch": head_pitch_min,
+            "max_pitch": head_pitch_max,
+        },
     }
 
     challenge_results, challenge_required = _evaluate_challenges(session_definition, checks)
@@ -621,6 +922,8 @@ def analyze_liveness_frames(
         passed = all(challenge["passed"] for challenge in challenge_results)
     else:
         passed = all(checks[check]["passed"] for check in required)
+    if spoof_analysis["enabled"]:
+        passed = bool(passed and spoof_analysis["passed"])
 
     return {
         "passed": passed,
@@ -629,11 +932,13 @@ def analyze_liveness_frames(
         "session": session_definition,
         "challenge_results": challenge_results,
         "frame_metrics": frame_metrics_response,
+        "spoof_analysis": spoof_analysis,
         "summary": {
             "total_frames": total_frames,
             "valid_frames": valid_frames,
             "face_detected_frames": valid_frames,
             "blink_event_count": blink_count,
+            "anti_spoof": spoof_analysis,
             "temporal_consistency": temporal_consistency,
         },
     }

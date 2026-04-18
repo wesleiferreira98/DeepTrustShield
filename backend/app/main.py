@@ -42,6 +42,7 @@ app = FastAPI(
 RATE_LIMITED_PATHS = {
     "/v1/deepfake/image/analyze",
     "/v1/deepfake/video/analyze",
+    "/v1/liveness/session",
     "/v1/liveness/analyze",
 }
 ANALYZE_RATE_LIMIT_PER_MINUTE = 20

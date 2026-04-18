@@ -99,6 +99,9 @@ class LivenessChallengeDefinition(BaseModel):
 class LivenessSessionDefinition(BaseModel):
     session_id: Optional[str] = None
     detector_mode: Optional[str] = None
+    issued_at: Optional[int] = None
+    expires_at: Optional[int] = None
+    signature: Optional[str] = None
     challenges: List[LivenessChallengeDefinition] = Field(default_factory=list)
 
 
@@ -109,10 +112,14 @@ class LivenessFrameMetrics(BaseModel):
     face_width: Optional[float] = None
     smile_ratio: Optional[float] = None
     mouth_open_ratio: Optional[float] = None
+    head_yaw: Optional[float] = None
+    head_pitch: Optional[float] = None
     delta_ear: Optional[float] = None
     delta_face_width: Optional[float] = None
     delta_smile_ratio: Optional[float] = None
     delta_mouth_open_ratio: Optional[float] = None
+    delta_head_yaw: Optional[float] = None
+    delta_head_pitch: Optional[float] = None
     movement_score: Optional[float] = None
 
 
@@ -129,6 +136,7 @@ class LivenessAnalyzeResponse(BaseModel):
     checks: Dict[str, Dict[str, Any]]
     required_checks: Optional[List[str]] = None
     summary: Dict[str, Any]
+    spoof_analysis: Optional[Dict[str, Any]] = None
     session: Optional[LivenessSessionDefinition] = None
     challenge_results: List[LivenessChallengeResult] = Field(default_factory=list)
     frame_metrics: List[LivenessFrameMetrics] = Field(default_factory=list)
