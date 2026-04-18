@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Shield, ShieldAlert, ShieldCheck, ShieldQuestion, AlertTriangle, RefreshCw } from 'lucide-react';
+import LivenessAnalysisCard from './LivenessAnalysisCard';
 import './Result.css';
 
 const MODEL_OPTIONS = [
@@ -22,6 +23,7 @@ const MODEL_OPTIONS = [
 function Result({
   result,
   previewUrl,
+  livenessAnalysis = null,
   analysisMode = 'image',
   onReset,
   onReanalyze,
@@ -234,6 +236,10 @@ function Result({
             </>
           )}
         </div>
+
+        {analysisMode === 'video' && livenessAnalysis && (
+          <LivenessAnalysisCard livenessAnalysis={livenessAnalysis} />
+        )}
 
         <div className="reanalyze-section">
           <h3>Reanalisar com outro modelo</h3>

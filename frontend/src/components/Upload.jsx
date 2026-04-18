@@ -36,12 +36,94 @@ const SPOOF_REASON_LABELS = {
   planar_motion_without_internal_face_change: 'movimento parece plano, sem mudanca interna do rosto',
   screen_or_reflection_glare: 'brilho/reflexo suspeito de tela',
   low_face_texture: 'textura facial baixa',
+  screen_rectangle_detected: 'retangulo de tela detectado ao redor da face',
   few_valid_face_frames: 'poucos frames validos com face',
   no_valid_face_frames: 'nenhum frame valido com face',
   model_spoof_score_high: 'modelo anti-spoof detectou foto/tela/replay',
   model_file_missing: 'modelo anti-spoof nao encontrado no backend',
   onnxruntime_missing: 'onnxruntime nao esta instalado no backend',
   no_face_crops: 'nenhum recorte facial valido para o modelo anti-spoof',
+  insufficient_antispoof_quality: 'qualidade insuficiente para anti-spoof, aproxime o rosto e mantenha a camera estavel',
+  mobile_antispoof_uncertain: 'anti-spoof inconclusivo no celular, refaca em luz mais uniforme',
+  borderline_spoof_score_with_high_frame: 'score anti-spoof em zona cinza com frame individual suspeito',
+  fusion_low_internal_motion_high_face_background_delta: 'sinais combinados de tela: pouco movimento interno e face muito diferente do fundo',
+};
+
+const formatPercent = (value) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+  return `${Math.round(value * 100)}%`;
+};
+
+const detectClientDevice = () => {
+  const uaData = navigator.userAgentData;
+  const userAgent = navigator.userAgent || '';
+  const platform = uaData?.platform || navigator.platform || '';
+  const maxTouchPoints = navigator.maxTouchPoints || 0;
+  const width = window.innerWidth || 0;
+  const height = window.innerHeight || 0;
+  const mobilePattern = /Android|iPhone|iPod|IEMobile|Opera Mini|Mobile/i;
+  const tabletPattern = /iPad|Tablet|PlayBook|Silk/i;
+  const uaMobile = Boolean(uaData?.mobile) || mobilePattern.test(userAgent);
+  const uaTablet = tabletPattern.test(userAgent) || (maxTouchPoints > 1 && Math.min(width, height) >= 700);
+  const deviceClass = uaTablet ? 'tablet' : uaMobile ? 'mobile' : 'desktop';
+
+  return {
+    device_class: deviceClass,
+    capture_source_guess: deviceClass === 'desktop' ? 'webcam' : 'phone_camera',
+    platform,
+    touch_points: maxTouchPoints,
+    viewport: { width, height },
+  };
+};
+
+const buildClientCaptureContext = (stream) => {
+  const device = detectClientDevice();
+  const videoTrack = stream?.getVideoTracks?.()[0] || null;
+  const settings = videoTrack?.getSettings?.() || {};
+
+  return {
+    ...device,
+    camera: {
+      label: videoTrack?.label || null,
+      facing_mode: settings.facingMode || null,
+      width: settings.width || null,
+      height: settings.height || null,
+      frame_rate: settings.frameRate || null,
+    },
+  };
+};
+
+const getLivenessFailureDetail = (livenessResult) => {
+  const details = [];
+  const failedChallenges = (livenessResult.challenge_results || [])
+    .filter((challenge) => !challenge.passed)
+    .map((challenge) => challenge.label || challenge.id)
+    .filter(Boolean);
+
+  if (failedChallenges.length > 0) {
+    details.push(`desafio backend nao confirmado: ${failedChallenges.slice(0, 2).join(', ')}`);
+  }
+
+  const spoofReasons = [
+    ...(livenessResult.spoof_analysis?.reasons || []),
+    ...(livenessResult.spoof_analysis?.model?.reasons || []),
+    ...(livenessResult.checks?.anti_spoof_model?.reasons || []),
+  ];
+  const uniqueReasons = [...new Set(spoofReasons)];
+  if (uniqueReasons.length > 0) {
+    details.push(uniqueReasons.map((reason) => SPOOF_REASON_LABELS[reason] || reason).join('; '));
+  }
+
+  const modelResult = livenessResult.spoof_analysis?.model || livenessResult.checks?.anti_spoof_model;
+  const pSpoof = formatPercent(modelResult?.p_spoof);
+  const threshold = formatPercent(modelResult?.threshold);
+  if (pSpoof && threshold) {
+    details.push(`anti-spoof p75=${pSpoof} limite=${threshold}`);
+  }
+
+  return details.join('. ');
 };
 
 const SCRIPT_CACHE = {};
@@ -126,7 +208,7 @@ function pickWeightedChallenges(pool, total) {
   return shuffle(selected);
 }
 
-function Upload({ onImageUpload, onVideoUpload }) {
+function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
   const [mode, setMode] = useState('image');
   const [isDragging, setIsDragging] = useState(false);
   const [targetModel, setTargetModel] = useState('auto');
@@ -1068,6 +1150,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
       }
 
       const previewUrl = URL.createObjectURL(frames[0]);
+      let backendLivenessResult = null;
       if (useBackendLiveness) {
         setVideoStep('Validando prova de vida no backend...');
         setBackendLivenessStatus('running');
@@ -1081,16 +1164,20 @@ function Upload({ onImageUpload, onVideoUpload }) {
         );
 
         try {
-          const livenessResult = await analyzeLiveness(frames, sessionDefinition, requiredChecks);
+          const clientContext = buildClientCaptureContext(streamRef.current);
+          const livenessResult = await analyzeLiveness(frames, sessionDefinition, requiredChecks, clientContext);
+          backendLivenessResult = livenessResult;
+          console.debug('Backend liveness result', livenessResult);
           if (!livenessResult.passed) {
             setBackendLivenessStatus('failed');
-            const spoofReasons = livenessResult.spoof_analysis?.reasons || [];
-            const translatedReasons = spoofReasons
-              .map((reason) => SPOOF_REASON_LABELS[reason] || reason)
-              .join('; ');
-            const detail = translatedReasons ? ` Motivo: ${translatedReasons}.` : '';
-            setCameraError(`Backend de liveness reprovou esta captura.${detail} Refaça a prova de vida com os movimentos pedidos.`);
+            const failureDetail = getLivenessFailureDetail(livenessResult);
+            const detail = failureDetail ? ` Motivo: ${failureDetail}.` : '';
+            const message = `Backend de liveness reprovou esta captura.${detail}`;
+            setCameraError(`${message} Refaça a prova de vida com os movimentos pedidos.`);
             setVideoStep('Prova de vida reprovada');
+            if (onLivenessRejected) {
+              onLivenessRejected(frames, previewUrl, livenessResult, message);
+            }
             return;
           } else {
             setBackendLivenessStatus('passed');
@@ -1104,7 +1191,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
         }
       }
       setVideoStep('Enviando frames para analise...');
-      onVideoUpload(frames, targetModel, previewUrl);
+      onVideoUpload(frames, targetModel, previewUrl, backendLivenessResult);
     } catch (error) {
       if (useBackendLiveness) {
         setBackendLivenessStatus('failed');
@@ -1123,6 +1210,7 @@ function Upload({ onImageUpload, onVideoUpload }) {
     isRecording,
     livenessStatus,
     onVideoUpload,
+    onLivenessRejected,
     stopRecordingTicker,
     targetModel,
     useBackendLiveness,

@@ -40,7 +40,7 @@ export async function analyzeVideo(frames, targetModel = 'auto') {
   return response.json();
 }
 
-export async function analyzeLiveness(frames, sessionDefinition = null, requiredChecks = []) {
+export async function analyzeLiveness(frames, sessionDefinition = null, requiredChecks = [], clientContext = null) {
   const formData = new FormData();
   frames.forEach((frame, index) => {
     formData.append('frames', frame, frame.name || `frame_${index}.jpg`);
@@ -52,6 +52,10 @@ export async function analyzeLiveness(frames, sessionDefinition = null, required
 
   if (sessionDefinition) {
     formData.append('session_definition', JSON.stringify(sessionDefinition));
+  }
+
+  if (clientContext) {
+    formData.append('client_context', JSON.stringify(clientContext));
   }
 
   const response = await fetch(`${LIVENESS_API_BASE}/analyze`, {

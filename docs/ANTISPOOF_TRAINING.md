@@ -119,7 +119,61 @@ Configuracoes opcionais no `.env`:
 LIVENESS_ONNX_ANTISPOOF_ENABLED=true
 LIVENESS_ONNX_ANTISPOOF_AGGREGATION=p75
 LIVENESS_ONNX_ANTISPOOF_THRESHOLD=-1.0
+LIVENESS_ONNX_ANTISPOOF_REVIEW_THRESHOLD=0.095
+LIVENESS_ONNX_ANTISPOOF_FRAME_SPIKE_MARGIN=0.035
+LIVENESS_ONNX_QUALITY_OVERRIDE_THRESHOLD=0.20
+LIVENESS_MOBILE_ONNX_HARD_THRESHOLD=0.20
+LIVENESS_FUSION_FACE_BACKGROUND_DELTA=0.34
+LIVENESS_FUSION_INTERNAL_MOTION_MAX=0.06
+LIVENESS_ONNX_MIN_FACE_WIDTH_RATIO=0.24
 ```
 
 `LIVENESS_ONNX_ANTISPOOF_AGGREGATION` aceita `median`, `p75`, `p90` ou `max`.
 Com `LIVENESS_ONNX_ANTISPOOF_THRESHOLD=-1.0`, o backend usa o threshold calibrado no metadata.
+`LIVENESS_ONNX_ANTISPOOF_REVIEW_THRESHOLD` cria uma zona cinza para inspecionar frames individuais.
+`LIVENESS_ONNX_ANTISPOOF_FRAME_SPIKE_MARGIN` exige que um pico individual fique bem acima do limite final para reprovar sozinho nessa zona; dois ou mais frames acima do limite tambem reprovam.
+`LIVENESS_ONNX_QUALITY_OVERRIDE_THRESHOLD` permite manter a classificacao de spoof mesmo com qualidade limitada apenas quando o ONNX estiver muito alto; abaixo disso a captura vira qualidade insuficiente.
+`LIVENESS_MOBILE_ONNX_HARD_THRESHOLD` deixa a camera do celular mais conservadora: abaixo desse valor, ONNX acima do threshold base vira captura inconclusiva em vez de acusacao de spoof.
+`LIVENESS_FUSION_FACE_BACKGROUND_DELTA` e `LIVENESS_FUSION_INTERNAL_MOTION_MAX` combinam evidencias fracas: ONNX em zona cinza, pouco movimento interno e face muito diferente do fundo.
+`LIVENESS_ONNX_MIN_FACE_WIDTH_RATIO` evita acusar fake quando a face esta pequena demais para o anti-spoof; nesse caso a captura e bloqueada como qualidade insuficiente.
+
+## Calibrar ONNX Com Capturas Locais
+
+Para medir se o ONNX esta separando bem rosto real e ataque de foto/tela, monte uma pasta assim:
+
+```text
+data/calibration/antispoof_local/
+  live/
+    tentativa_001/
+      frame_1.jpg
+      frame_2.jpg
+  spoof/
+    celular_foto_001/
+      frame_1.jpg
+      frame_2.jpg
+```
+
+Cada subpasta vira uma tentativa multi-frame. Arquivos soltos dentro de `live/` ou `spoof/` tambem funcionam como amostras individuais.
+
+```bash
+.venv-training/bin/python scripts/calibrate_antispoof_onnx.py \
+  --input-root data/calibration/antispoof_local \
+  --sample-mode folder \
+  --aggregation p75 \
+  --target-apcer 0.02
+```
+
+Saidas:
+
+```text
+data/reports/antispoof_calibration/<timestamp>/antispoof_scores.csv
+data/reports/antispoof_calibration/<timestamp>/antispoof_frame_scores.csv
+data/reports/antispoof_calibration/<timestamp>/threshold_summary.csv
+data/reports/antispoof_calibration/<timestamp>/calibration_report.json
+```
+
+Use:
+
+- `best_ACER`: threshold com melhor equilibrio entre aceitar live e bloquear spoof.
+- `recommended_security`: threshold mais conservador respeitando o `--target-apcer`.
+- `antispoof_frame_scores.csv`: diagnostico por frame, bom para ver se uma captura teve apenas um frame estranho ou se toda a tentativa foi suspeita.

@@ -165,6 +165,7 @@ async def analyze_liveness(
     frames: list[UploadFile] = File(...),
     required_checks: str = Form('head_left,mouth_open'),
     session_definition: str | None = Form(None),
+    client_context: str | None = Form(None),
 ):
     """Analyze liveness from extracted video frames.
 
@@ -220,12 +221,24 @@ async def analyze_liveness(
         if parsed_session.signature or parsed_session.session_id:
             _verify_session(parsed_session.model_dump())
 
+    parsed_client_context = None
+    if client_context:
+        try:
+            parsed_client_context = json.loads(client_context)
+            if not isinstance(parsed_client_context, dict):
+                raise ValueError("client_context deve ser um objeto JSON")
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f'Client context invalido: {str(exc)}') from exc
+
     try:
         result = analyze_liveness_frames(
             frame_bytes_list,
             required_checks=checks,
             session_definition=parsed_session.model_dump() if parsed_session else None,
+            client_context=parsed_client_context,
         )
+        if parsed_client_context:
+            result.setdefault("summary", {})["client_context"] = parsed_client_context
     except ImportError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

@@ -30,7 +30,8 @@ HEAD_PITCH_TARGET_DELTA = 0.07
 ANTI_SPOOF_INTERNAL_MOTION_MIN = 0.085
 ANTI_SPOOF_GEOMETRIC_MOTION_MIN = 0.13
 ANTI_SPOOF_LOW_TEXTURE_LAPLACIAN = 12.0
-ANTI_SPOOF_HIGH_GLARE_RATIO = 0.08
+ANTI_SPOOF_SCREEN_RECTANGLE_MIN = 0.62
+ANTI_SPOOF_PLANAR_MOTION_PENALTY = 0.30
 
 
 @dataclass
@@ -407,7 +408,7 @@ def _calculate_temporal_consistency(frame_metrics: list[dict[str, Any]]) -> dict
     }
 
 
-def _extract_face_crop(image, landmarks, margin_ratio: float = 0.18):
+def _extract_face_bbox(image, landmarks, margin_ratio: float = 0.18):
     height, width = image.shape[:2]
     xs = [point.x for point in landmarks if 0.0 <= point.x <= 1.0]
     ys = [point.y for point in landmarks if 0.0 <= point.y <= 1.0]
@@ -420,11 +421,121 @@ def _extract_face_crop(image, landmarks, margin_ratio: float = 0.18):
     bottom = min(height, int((max(ys) + margin_ratio) * height))
     if right - left < 24 or bottom - top < 24:
         return None
+    return left, top, right, bottom
+
+
+def _extract_face_crop(image, landmarks, margin_ratio: float = 0.18):
+    bbox = _extract_face_bbox(image, landmarks, margin_ratio)
+    if bbox is None:
+        return None
+    left, top, right, bottom = bbox
     return image[top:bottom, left:right]
 
 
+def _score_screen_rectangle(image, face_bbox: tuple[int, int, int, int]) -> float:
+    height, width = image.shape[:2]
+    image_area = float(height * width)
+    face_left, face_top, face_right, face_bottom = face_bbox
+    face_area = float(max(face_right - face_left, 1) * max(face_bottom - face_top, 1))
+    face_center_x = (face_left + face_right) / 2
+    face_center_y = (face_top + face_bottom) / 2
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 55, 150)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best_score = 0.0
+    for contour in contours:
+        area = float(cv2.contourArea(contour))
+        if area < image_area * 0.06 or area > image_area * 0.92:
+            continue
+
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter <= 0:
+            continue
+
+        approximation = cv2.approxPolyDP(contour, 0.035 * perimeter, True)
+        x, y, rect_w, rect_h = cv2.boundingRect(approximation)
+        if rect_w <= 0 or rect_h <= 0:
+            continue
+        if rect_w > width * 0.96 and rect_h > height * 0.96:
+            continue
+
+        rect_area = float(rect_w * rect_h)
+        if rect_area < face_area * 1.5:
+            continue
+
+        contains_center = (x <= face_center_x <= x + rect_w) and (y <= face_center_y <= y + rect_h)
+        contains_face = (
+            x <= face_left
+            and y <= face_top
+            and x + rect_w >= face_right
+            and y + rect_h >= face_bottom
+        )
+        if not (contains_center and contains_face):
+            continue
+
+        aspect_ratio = rect_w / max(rect_h, 1)
+        if aspect_ratio < 0.35 or aspect_ratio > 2.9:
+            continue
+
+        rectangularity = min(1.0, area / max(rect_area, 1.0))
+        corner_score = 1.0 if len(approximation) == 4 else 0.75
+        rect_area_ratio = min(1.0, rect_area / max(image_area * 0.45, 1.0))
+        edge_roi = edges[y : y + rect_h, x : x + rect_w]
+        edge_density = float(np.mean(edge_roi > 0)) if edge_roi.size else 0.0
+        edge_score = min(1.0, edge_density / 0.08)
+        score = (
+            0.35 * rectangularity
+            + 0.25 * corner_score
+            + 0.20 * rect_area_ratio
+            + 0.20 * edge_score
+        )
+        best_score = max(best_score, float(max(0.0, min(1.0, score))))
+
+    return best_score
+
+
+def _calculate_background_features(image, face_bbox: tuple[int, int, int, int]) -> dict[str, float]:
+    height, width = image.shape[:2]
+    left, top, right, bottom = face_bbox
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    value = hsv[:, :, 2].astype(np.float32) / 255.0
+
+    mask = np.ones((height, width), dtype=bool)
+    pad_x = int((right - left) * 0.15)
+    pad_y = int((bottom - top) * 0.15)
+    mask[
+        max(0, top - pad_y) : min(height, bottom + pad_y),
+        max(0, left - pad_x) : min(width, right + pad_x),
+    ] = False
+
+    face_values = value[top:bottom, left:right]
+    background_values = value[mask]
+    if face_values.size == 0 or background_values.size == 0:
+        return {
+            "face_brightness": 0.0,
+            "background_brightness": 0.0,
+            "face_background_delta": 0.0,
+        }
+
+    face_brightness = float(np.mean(face_values))
+    background_brightness = float(np.mean(background_values))
+    return {
+        "face_brightness": face_brightness,
+        "background_brightness": background_brightness,
+        "face_background_delta": float(abs(face_brightness - background_brightness)),
+    }
+
+
 def _calculate_spoof_frame_features(image, landmarks) -> dict[str, Any] | None:
-    crop = _extract_face_crop(image, landmarks)
+    face_bbox = _extract_face_bbox(image, landmarks)
+    if face_bbox is None:
+        return None
+
+    left, top, right, bottom = face_bbox
+    crop = image[top:bottom, left:right]
     if crop is None:
         return None
 
@@ -434,12 +545,21 @@ def _calculate_spoof_frame_features(image, landmarks) -> dict[str, Any] | None:
     value = hsv[:, :, 2]
     laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     glare_ratio = float(np.mean((value > 245) & (saturation < 45)))
+    overexposed_ratio = float(np.mean(value > 245))
     edge_density = float(np.mean(cv2.Canny(gray, 80, 160) > 0))
+    background_features = _calculate_background_features(image, face_bbox)
+    screen_rectangle_score = _score_screen_rectangle(image, face_bbox)
 
     return {
         "laplacian_var": laplacian_var,
         "glare_ratio": glare_ratio,
+        "overexposed_ratio": overexposed_ratio,
+        "brightness_mean": float(np.mean(value) / 255.0),
+        "brightness_p95": float(np.percentile(value, 95) / 255.0),
+        "contrast_std": float(np.std(gray) / 255.0),
         "edge_density": edge_density,
+        "screen_rectangle_score": screen_rectangle_score,
+        **background_features,
     }
 
 
@@ -478,6 +598,20 @@ def _combine_spoof_analyses(heuristic_analysis: dict[str, Any], model_analysis: 
     }
 
 
+def _mark_spoof_analysis_failed(spoof_analysis: dict[str, Any], reason: str) -> None:
+    spoof_analysis["passed"] = False
+    spoof_analysis["score"] = min(float(spoof_analysis.get("score", 1.0)), 0.0)
+    reasons = spoof_analysis.setdefault("reasons", [])
+    if reason not in reasons:
+        reasons.append(reason)
+
+
+def _replace_model_failure_with_quality_reason(model_analysis: dict[str, Any], reason: str) -> None:
+    model_analysis["passed"] = False
+    model_analysis["score"] = min(float(model_analysis.get("score", 1.0)), 0.0)
+    model_analysis["reasons"] = [reason]
+
+
 def _analyze_spoof_signals(
     *,
     settings,
@@ -514,6 +648,12 @@ def _analyze_spoof_signals(
     median_laplacian = float(np.median([item["laplacian_var"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_glare_ratio = float(np.median([item["glare_ratio"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_edge_density = float(np.median([item["edge_density"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_brightness = float(np.median([item["brightness_mean"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_brightness_p95 = float(np.median([item["brightness_p95"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_contrast = float(np.median([item["contrast_std"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_overexposed_ratio = float(np.median([item["overexposed_ratio"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_screen_rectangle_score = float(np.median([item["screen_rectangle_score"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_face_background_delta = float(np.median([item["face_background_delta"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
 
     score = 1.0
     reasons: list[str] = []
@@ -527,16 +667,19 @@ def _analyze_spoof_signals(
         and internal_motion < ANTI_SPOOF_INTERNAL_MOTION_MIN
     )
     if planar_motion_suspected:
-        score -= 0.50
+        score -= ANTI_SPOOF_PLANAR_MOTION_PENALTY
         reasons.append("planar_motion_without_internal_face_change")
 
     if median_laplacian and median_laplacian < ANTI_SPOOF_LOW_TEXTURE_LAPLACIAN:
         score -= 0.12
         reasons.append("low_face_texture")
 
-    if median_glare_ratio > ANTI_SPOOF_HIGH_GLARE_RATIO:
-        score -= 0.15
-        reasons.append("screen_or_reflection_glare")
+    if (
+        median_screen_rectangle_score >= ANTI_SPOOF_SCREEN_RECTANGLE_MIN
+        and internal_motion < ANTI_SPOOF_INTERNAL_MOTION_MIN
+    ):
+        score -= 0.55
+        reasons.append("screen_rectangle_detected")
 
     score = float(max(0.0, min(1.0, score)))
 
@@ -556,7 +699,14 @@ def _analyze_spoof_signals(
             "smile_abs_delta": smile_abs_delta,
             "median_laplacian_var": median_laplacian,
             "median_glare_ratio": median_glare_ratio,
+            "median_overexposed_ratio": median_overexposed_ratio,
+            "median_brightness": median_brightness,
+            "median_brightness_p95": median_brightness_p95,
+            "median_contrast": median_contrast,
             "median_edge_density": median_edge_density,
+            "median_screen_rectangle_score": median_screen_rectangle_score,
+            "screen_rectangle_min": ANTI_SPOOF_SCREEN_RECTANGLE_MIN,
+            "median_face_background_delta": median_face_background_delta,
             "valid_frame_ratio": float(valid_frames / total_frames) if total_frames else 0.0,
         },
     }
@@ -634,16 +784,32 @@ def _evaluate_challenges(
     return challenge_results, required_union
 
 
+def _should_enforce_backend_challenges(session_definition: dict[str, Any] | None) -> bool:
+    """Only enforce challenge replay when the client did not use a signed UI session.
+
+    In the browser flow the user completes the dynamic challenges before the
+    short recording starts. The backend recording is then used for anti-spoof
+    verification, so re-requiring every challenge in those later frames causes
+    false rejections for real users.
+    """
+    return not (session_definition and session_definition.get("signature"))
+
+
 def analyze_liveness_frames(
     frame_bytes_list: list[bytes],
     required_checks: list[str] | None = None,
     session_definition: dict[str, Any] | None = None,
+    client_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _ensure_liveness_dependencies()
     runtime_settings = get_settings()
 
     if required_checks is None:
         required_checks = ["blink", "distance", "smile"]
+    client_context = client_context or {}
+    capture_source = client_context.get("capture_source_guess")
+    device_class = client_context.get("device_class")
+    is_mobile_capture = bool(capture_source == "phone_camera" or device_class in {"mobile", "tablet"})
 
     all_frame_metrics: list[FrameMetrics | None] = []
     frame_spoof_features: list[dict[str, Any]] = []
@@ -805,6 +971,52 @@ def analyze_liveness_frames(
         frame_spoof_features=frame_spoof_features,
     )
     model_spoof_analysis = analyze_antispoof_crops(antispoof_crops, runtime_settings)
+    model_p_spoof_raw = float(model_spoof_analysis.get("p_spoof", 0.0))
+    mobile_hard_threshold = float(runtime_settings.liveness_mobile_onnx_hard_threshold)
+
+    if (
+        is_mobile_capture
+        and model_spoof_analysis.get("enabled")
+        and model_spoof_analysis.get("threshold") is not None
+        and float(model_spoof_analysis["threshold"]) <= model_p_spoof_raw < mobile_hard_threshold
+    ):
+        _replace_model_failure_with_quality_reason(model_spoof_analysis, "mobile_antispoof_uncertain")
+        model_spoof_analysis["mobile_policy"] = {
+            "enabled": True,
+            "hard_threshold": mobile_hard_threshold,
+            "capture_source": capture_source,
+            "device_class": device_class,
+        }
+
+    median_face_width = float(np.median(face_widths)) if face_widths else 0.0
+    median_laplacian = (
+        float(np.median([item["laplacian_var"] for item in frame_spoof_features]))
+        if frame_spoof_features
+        else 0.0
+    )
+    face_too_small_for_model = median_face_width < float(runtime_settings.liveness_onnx_min_face_width_ratio)
+    too_blurry_for_model = bool(median_laplacian and median_laplacian < ANTI_SPOOF_LOW_TEXTURE_LAPLACIAN)
+    model_quality_limited = bool(face_too_small_for_model or too_blurry_for_model)
+    model_has_strong_spoof_signal = bool(
+        model_spoof_analysis.get("enabled")
+        and model_spoof_analysis.get("threshold") is not None
+        and float(model_spoof_analysis.get("p_spoof", 0.0)) >= float(model_spoof_analysis["threshold"])
+    )
+    model_has_hard_spoof_signal = bool(
+        model_spoof_analysis.get("enabled")
+        and float(model_spoof_analysis.get("p_spoof", 0.0))
+        >= float(runtime_settings.liveness_onnx_quality_override_threshold)
+    )
+    if model_quality_limited and model_spoof_analysis.get("enabled") and not model_has_hard_spoof_signal:
+        _replace_model_failure_with_quality_reason(model_spoof_analysis, "insufficient_antispoof_quality")
+        model_spoof_analysis["quality"] = {
+            "face_width": median_face_width,
+            "min_face_width": float(runtime_settings.liveness_onnx_min_face_width_ratio),
+            "median_laplacian_var": median_laplacian,
+            "face_too_small": face_too_small_for_model,
+            "too_blurry": too_blurry_for_model,
+        }
+
     spoof_analysis = _combine_spoof_analyses(heuristic_spoof_analysis, model_spoof_analysis)
 
     frame_metrics_response = _build_temporal_frame_metrics(all_frame_metrics)
@@ -913,13 +1125,67 @@ def analyze_liveness_frames(
     }
 
     challenge_results, challenge_required = _evaluate_challenges(session_definition, checks)
+    model_frame_scores = [
+        float(score)
+        for score in model_spoof_analysis.get("frame_scores", [])
+        if isinstance(score, (int, float))
+    ]
+    model_threshold = model_spoof_analysis.get("threshold")
+    model_p_spoof = float(model_spoof_analysis.get("p_spoof", 0.0))
+    review_threshold = float(runtime_settings.liveness_onnx_antispoof_review_threshold)
+    frame_spike_margin = float(runtime_settings.liveness_onnx_antispoof_frame_spike_margin)
+    max_model_frame_score = max(model_frame_scores) if model_frame_scores else 0.0
+    high_model_frame_count = (
+        sum(1 for score in model_frame_scores if model_threshold is not None and score >= float(model_threshold))
+        if model_frame_scores
+        else 0
+    )
+    borderline_model_score = bool(
+        not is_mobile_capture
+        and
+        model_spoof_analysis.get("enabled")
+        and model_spoof_analysis.get("passed", True)
+        and model_threshold is not None
+        and review_threshold <= model_p_spoof < float(model_threshold)
+    )
+    strong_frame_spike = bool(
+        model_threshold is not None
+        and max_model_frame_score >= float(model_threshold) + frame_spike_margin
+    )
+    repeated_frame_spike = high_model_frame_count >= 2
+    frame_spike_in_review_zone = bool(
+        borderline_model_score
+        and (strong_frame_spike or repeated_frame_spike)
+    )
+    if frame_spike_in_review_zone:
+        _mark_spoof_analysis_failed(spoof_analysis, "borderline_spoof_score_with_high_frame")
+        checks["anti_spoof"]["passed"] = False
+        checks["anti_spoof"]["score"] = spoof_analysis["score"]
+        checks["anti_spoof"]["reasons"] = spoof_analysis["reasons"]
+
+    heuristic_signals = spoof_analysis.get("heuristic", {}).get("signals", {})
+    fusion_low_internal_high_delta = bool(
+        not is_mobile_capture
+        and
+        borderline_model_score
+        and float(heuristic_signals.get("internal_motion", 1.0))
+        <= float(runtime_settings.liveness_fusion_internal_motion_max)
+        and float(heuristic_signals.get("median_face_background_delta", 0.0))
+        >= float(runtime_settings.liveness_fusion_face_background_delta)
+    )
+    if fusion_low_internal_high_delta:
+        _mark_spoof_analysis_failed(spoof_analysis, "fusion_low_internal_motion_high_face_background_delta")
+        checks["anti_spoof"]["passed"] = False
+        checks["anti_spoof"]["score"] = spoof_analysis["score"]
+        checks["anti_spoof"]["reasons"] = spoof_analysis["reasons"]
 
     required = [c for c in (required_checks or []) if c in checks]
     if not required:
         required = challenge_required or ["blink", "distance", "smile"]
 
+    enforce_challenges = _should_enforce_backend_challenges(session_definition)
     if challenge_results:
-        passed = all(challenge["passed"] for challenge in challenge_results)
+        passed = all(challenge["passed"] for challenge in challenge_results) if enforce_challenges else True
     else:
         passed = all(checks[check]["passed"] for check in required)
     if spoof_analysis["enabled"]:
@@ -939,6 +1205,41 @@ def analyze_liveness_frames(
             "face_detected_frames": valid_frames,
             "blink_event_count": blink_count,
             "anti_spoof": spoof_analysis,
+            "challenge_results_enforced": enforce_challenges,
+            "borderline_review": {
+                "enabled": True,
+                "review_threshold": review_threshold,
+                "triggered": frame_spike_in_review_zone,
+                "max_model_frame_score": max_model_frame_score,
+                "high_model_frame_count": high_model_frame_count,
+                "frame_spike_margin": frame_spike_margin,
+                "strong_frame_spike": strong_frame_spike,
+                "repeated_frame_spike": repeated_frame_spike,
+            },
+            "fusion_review": {
+                "enabled": True,
+                "triggered": fusion_low_internal_high_delta,
+                "skipped_for_mobile": is_mobile_capture,
+                "internal_motion_max": float(runtime_settings.liveness_fusion_internal_motion_max),
+                "face_background_delta_min": float(runtime_settings.liveness_fusion_face_background_delta),
+            },
+            "mobile_policy": {
+                "enabled": is_mobile_capture,
+                "hard_threshold": mobile_hard_threshold,
+                "capture_source": capture_source,
+                "device_class": device_class,
+            },
+            "antispoof_quality": {
+                "limited": model_quality_limited,
+                "model_has_strong_spoof_signal": model_has_strong_spoof_signal,
+                "model_has_hard_spoof_signal": model_has_hard_spoof_signal,
+                "quality_override_threshold": float(runtime_settings.liveness_onnx_quality_override_threshold),
+                "face_width": median_face_width,
+                "min_face_width": float(runtime_settings.liveness_onnx_min_face_width_ratio),
+                "median_laplacian_var": median_laplacian,
+                "face_too_small": face_too_small_for_model,
+                "too_blurry": too_blurry_for_model,
+            },
             "temporal_consistency": temporal_consistency,
         },
     }

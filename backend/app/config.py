@@ -46,9 +46,17 @@ class Settings(BaseSettings):
     )
     liveness_onnx_antispoof_aggregation: str = "p75"
     liveness_onnx_antispoof_threshold: float = -1.0
+    liveness_onnx_antispoof_review_threshold: float = 0.095
+    liveness_onnx_antispoof_frame_spike_margin: float = 0.035
+    liveness_onnx_quality_override_threshold: float = 0.20
+    liveness_mobile_onnx_hard_threshold: float = 0.20
+    liveness_fusion_face_background_delta: float = 0.34
+    liveness_fusion_internal_motion_max: float = 0.06
+    liveness_onnx_min_face_width_ratio: float = 0.24
     
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 @lru_cache()

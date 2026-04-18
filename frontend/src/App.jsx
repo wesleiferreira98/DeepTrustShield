@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import Upload from './components/Upload'
 import AnalysisPanel from './components/AnalysisPanel'
 import Result from './components/Result'
+import LivenessFailureResult from './components/LivenessFailureResult'
 import { analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
 import './App.css'
 
@@ -16,6 +17,8 @@ function App() {
   const [status, setStatus] = useState(null)
   const [result, setResult] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
+  const [livenessAnalysis, setLivenessAnalysis] = useState(null)
+  const [livenessFailureMessage, setLivenessFailureMessage] = useState(null)
   const [error, setError] = useState(null)
 
   const [sourceImageFile, setSourceImageFile] = useState(null)
@@ -49,6 +52,7 @@ function App() {
       setResult(null)
       setStatus(null)
       setComparisonResults([])
+      setLivenessFailureMessage(null)
       setState('uploading')
     } else {
       setReanalysisLoading(true)
@@ -102,6 +106,8 @@ function App() {
     setAnalysisMode('image')
     setSourceImageFile(file)
     setSourceVideoFrames([])
+    setLivenessAnalysis(null)
+    setLivenessFailureMessage(null)
 
     const url = URL.createObjectURL(file)
     setPreviewUrl(url)
@@ -109,10 +115,12 @@ function App() {
     await runAnalysisJob('image', targetModel, file, false)
   }, [runAnalysisJob])
 
-  const handleVideoUpload = useCallback(async (frames, targetModel = 'auto', preview = null) => {
+  const handleVideoUpload = useCallback(async (frames, targetModel = 'auto', preview = null, livenessResult = null) => {
     setAnalysisMode('video')
     setSourceImageFile(null)
     setSourceVideoFrames(frames)
+    setLivenessAnalysis(livenessResult)
+    setLivenessFailureMessage(null)
 
     if (preview) {
       setPreviewUrl(preview)
@@ -124,6 +132,28 @@ function App() {
 
     await runAnalysisJob('video', targetModel, frames, false)
   }, [runAnalysisJob])
+
+  const handleLivenessRejected = useCallback((frames, preview = null, livenessResult = null, message = null) => {
+    setState('liveness_failed')
+    setAnalysisMode('video')
+    setJobId(null)
+    setStatus(null)
+    setResult(null)
+    setError(null)
+    setComparisonResults([])
+    setSourceImageFile(null)
+    setSourceVideoFrames(frames)
+    setLivenessAnalysis(livenessResult)
+    setLivenessFailureMessage(message)
+
+    if (preview) {
+      setPreviewUrl(preview)
+    } else if (frames.length > 0) {
+      setPreviewUrl(URL.createObjectURL(frames[0]))
+    } else {
+      setPreviewUrl(null)
+    }
+  }, [])
 
   const handleReanalyze = useCallback(async (targetModel) => {
     if (analysisMode === 'image' && sourceImageFile) {
@@ -146,6 +176,8 @@ function App() {
     setStatus(null)
     setResult(null)
     setPreviewUrl(null)
+    setLivenessAnalysis(null)
+    setLivenessFailureMessage(null)
     setError(null)
     setSourceImageFile(null)
     setSourceVideoFrames([])
@@ -166,7 +198,11 @@ function App() {
 
       <main className="main">
         {state === 'idle' && (
-          <Upload onImageUpload={handleImageUpload} onVideoUpload={handleVideoUpload} />
+          <Upload
+            onImageUpload={handleImageUpload}
+            onVideoUpload={handleVideoUpload}
+            onLivenessRejected={handleLivenessRejected}
+          />
         )}
 
         {(state === 'uploading' || state === 'analyzing') && (
@@ -182,6 +218,7 @@ function App() {
           <Result
             result={result}
             previewUrl={previewUrl}
+            livenessAnalysis={livenessAnalysis}
             status={status}
             analysisMode={analysisMode}
             onReset={handleReset}
@@ -189,6 +226,15 @@ function App() {
             comparisonResults={comparisonResults}
             reanalysisLoading={reanalysisLoading}
             reanalysisError={reanalysisError}
+          />
+        )}
+
+        {state === 'liveness_failed' && (
+          <LivenessFailureResult
+            previewUrl={previewUrl}
+            livenessAnalysis={livenessAnalysis}
+            message={livenessFailureMessage}
+            onReset={handleReset}
           />
         )}
 
