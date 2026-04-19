@@ -126,6 +126,8 @@ LIVENESS_MOBILE_ONNX_HARD_THRESHOLD=0.20
 LIVENESS_FUSION_FACE_BACKGROUND_DELTA=0.34
 LIVENESS_FUSION_INTERNAL_MOTION_MAX=0.06
 LIVENESS_ONNX_MIN_FACE_WIDTH_RATIO=0.24
+LIVENESS_CAPTURE_STORAGE_ENABLED=true
+LIVENESS_CAPTURE_STORAGE_PATH=./data/calibration/liveness_captures
 ```
 
 `LIVENESS_ONNX_ANTISPOOF_AGGREGATION` aceita `median`, `p75`, `p90` ou `max`.
@@ -136,6 +138,7 @@ Com `LIVENESS_ONNX_ANTISPOOF_THRESHOLD=-1.0`, o backend usa o threshold calibrad
 `LIVENESS_MOBILE_ONNX_HARD_THRESHOLD` deixa a camera do celular mais conservadora: abaixo desse valor, ONNX acima do threshold base vira captura inconclusiva em vez de acusacao de spoof.
 `LIVENESS_FUSION_FACE_BACKGROUND_DELTA` e `LIVENESS_FUSION_INTERNAL_MOTION_MAX` combinam evidencias fracas: ONNX em zona cinza, pouco movimento interno e face muito diferente do fundo.
 `LIVENESS_ONNX_MIN_FACE_WIDTH_RATIO` evita acusar fake quando a face esta pequena demais para o anti-spoof; nesse caso a captura e bloqueada como qualidade insuficiente.
+`LIVENESS_CAPTURE_STORAGE_ENABLED` salva as tentativas de liveness em `data/calibration/liveness_captures/unlabeled/` com frames e `metadata.json`. O label fica vazio de proposito para revisao manual antes de usar no treino.
 
 ## Calibrar ONNX Com Capturas Locais
 

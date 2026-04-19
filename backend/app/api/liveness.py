@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import secrets
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
@@ -48,6 +50,111 @@ def _verify_session(session: dict) -> None:
     expires_at = session.get("expires_at")
     if not isinstance(expires_at, int) or expires_at < int(time.time()):
         raise HTTPException(status_code=400, detail="Sessao de liveness expirada")
+
+
+def _frame_extension(content_type: str | None) -> str:
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "image/webp":
+        return ".webp"
+    return ".jpg"
+
+
+def _append_capture_manifest(manifest_path: Path, row: dict) -> None:
+    import csv
+
+    fieldnames = [
+        "capture_id",
+        "created_at",
+        "relative_dir",
+        "review_label",
+        "passed",
+        "p_spoof",
+        "threshold",
+        "aggregation",
+        "device_class",
+        "capture_source",
+        "stream_width",
+        "stream_height",
+        "frame_count",
+    ]
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    exists = manifest_path.exists()
+    with manifest_path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        if not exists:
+            writer.writeheader()
+        writer.writerow({key: row.get(key) for key in fieldnames})
+
+
+def _store_liveness_capture(
+    *,
+    frame_bytes_list: list[bytes],
+    frame_content_types: list[str],
+    result: dict,
+    required_checks: list[str],
+    session_definition: dict | None,
+    client_context: dict | None,
+) -> None:
+    if not settings.liveness_capture_storage_enabled:
+        return
+
+    created_at = datetime.now(timezone.utc)
+    session_id = (session_definition or {}).get("session_id") or secrets.token_urlsafe(8)
+    capture_id = f"{created_at.strftime('%Y%m%d_%H%M%S')}_{session_id[:12]}"
+    root = Path(settings.liveness_capture_storage_path)
+    capture_dir = root / "unlabeled" / capture_id
+    frames_dir = capture_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    frame_paths = []
+    for index, content in enumerate(frame_bytes_list, start=1):
+        extension = _frame_extension(frame_content_types[index - 1] if index - 1 < len(frame_content_types) else None)
+        frame_path = frames_dir / f"frame_{index:02d}{extension}"
+        frame_path.write_bytes(content)
+        frame_paths.append(str(frame_path.relative_to(capture_dir)))
+
+    model_analysis = (
+        (result.get("spoof_analysis") or {}).get("model")
+        or (result.get("checks") or {}).get("anti_spoof_model")
+        or {}
+    )
+    metadata = {
+        "capture_id": capture_id,
+        "created_at": created_at.isoformat(),
+        "review_label": None,
+        "label_source": "manual_review_required",
+        "frames": frame_paths,
+        "required_checks": required_checks,
+        "client_context": client_context or {},
+        "session": {
+            key: value
+            for key, value in (session_definition or {}).items()
+            if key != "signature"
+        },
+        "result": result,
+    }
+    (capture_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    camera = (client_context or {}).get("camera") or {}
+    _append_capture_manifest(
+        root / "manifest.csv",
+        {
+            "capture_id": capture_id,
+            "created_at": created_at.isoformat(),
+            "relative_dir": str(capture_dir.relative_to(root)),
+            "review_label": "",
+            "passed": result.get("passed"),
+            "p_spoof": model_analysis.get("p_spoof"),
+            "threshold": model_analysis.get("threshold"),
+            "aggregation": model_analysis.get("aggregation"),
+            "device_class": (client_context or {}).get("device_class"),
+            "capture_source": (client_context or {}).get("capture_source_guess"),
+            "stream_width": camera.get("width"),
+            "stream_height": camera.get("height"),
+            "frame_count": len(frame_paths),
+        },
+    )
 
 
 def _pick_weighted_challenges(pool: list[dict], total: int) -> list[dict]:
@@ -185,6 +292,7 @@ async def analyze_liveness(
     max_total_bytes = settings.max_total_frames_upload_mb * 1024 * 1024
     total_bytes = 0
     frame_bytes_list: list[bytes] = []
+    frame_content_types: list[str] = []
 
     for frame in frames:
         if frame.content_type not in allowed_types:
@@ -207,6 +315,7 @@ async def analyze_liveness(
                     detail=f"Upload total de frames excede {settings.max_total_frames_upload_mb}MB",
                 )
             frame_bytes_list.append(content)
+            frame_content_types.append(frame.content_type)
 
     if not frame_bytes_list:
         raise HTTPException(status_code=400, detail='Nenhum frame valido recebido')
@@ -239,6 +348,14 @@ async def analyze_liveness(
         )
         if parsed_client_context:
             result.setdefault("summary", {})["client_context"] = parsed_client_context
+        _store_liveness_capture(
+            frame_bytes_list=frame_bytes_list,
+            frame_content_types=frame_content_types,
+            result=result,
+            required_checks=checks,
+            session_definition=parsed_session.model_dump() if parsed_session else None,
+            client_context=parsed_client_context,
+        )
     except ImportError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:

@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     liveness_fusion_face_background_delta: float = 0.34
     liveness_fusion_internal_motion_max: float = 0.06
     liveness_onnx_min_face_width_ratio: float = 0.24
+    liveness_capture_storage_enabled: bool = True
+    liveness_capture_storage_path: str = f"{BASE_DIR}/data/calibration/liveness_captures"
     
     class Config:
         env_file = ".env"

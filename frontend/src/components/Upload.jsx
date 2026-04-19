@@ -31,6 +31,39 @@ const MIXED_SMILE_PROGRESS_WEIGHT = 1.15;
 const MIXED_HEAD_POSE_PROGRESS_WEIGHT = 1.35;
 const MIN_CHALLENGES_PER_SESSION = 3;
 const MAX_CHALLENGES_PER_SESSION = 5;
+const CAMERA_CONSTRAINTS = [
+  {
+    label: 'HD',
+    video: {
+      facingMode: 'user',
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 24, max: 30 },
+    },
+  },
+  {
+    label: 'qHD',
+    video: {
+      facingMode: 'user',
+      width: { ideal: 960 },
+      height: { ideal: 540 },
+      frameRate: { ideal: 24, max: 30 },
+    },
+  },
+  {
+    label: 'VGA',
+    video: {
+      facingMode: 'user',
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      frameRate: { ideal: 20, max: 30 },
+    },
+  },
+  {
+    label: 'Padrao',
+    video: { facingMode: 'user' },
+  },
+];
 
 const SPOOF_REASON_LABELS = {
   planar_motion_without_internal_face_change: 'movimento parece plano, sem mudanca interna do rosto',
@@ -93,6 +126,24 @@ const buildClientCaptureContext = (stream) => {
       frame_rate: settings.frameRate || null,
     },
   };
+};
+
+const openBestCameraStream = async () => {
+  let lastError = null;
+
+  for (const option of CAMERA_CONSTRAINTS) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: option.video,
+        audio: false,
+      });
+      return { stream, profile: option.label };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Nao foi possivel acessar a camera.');
 };
 
 const getLivenessFailureDetail = (livenessResult) => {
@@ -1003,15 +1054,17 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
     setVideoStep('Solicitando permissao da camera...');
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false,
-      });
+      const { stream, profile } = await openBestCameraStream();
+      const videoTrack = stream.getVideoTracks?.()[0] || null;
+      const cameraSettings = videoTrack?.getSettings?.() || {};
 
       streamRef.current = stream;
       setCameraReady(true);
       setFaceDetected(false);
-      setVideoStep('Camera ativa. Preparando detector de face...');
+      const streamSize = cameraSettings.width && cameraSettings.height
+        ? ` (${cameraSettings.width}x${cameraSettings.height}, ${profile})`
+        : '';
+      setVideoStep(`Camera ativa${streamSize}. Preparando detector de face...`);
 
       try {
         await loadMediaPipeFaceMesh();
@@ -1095,7 +1148,7 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
       // drawImage usa os pixels originais do stream (nao aplica transform CSS da preview).
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const frameBlob = await new Promise((resolve) => {
-        canvas.toBlob(resolve, 'image/jpeg', 0.9);
+        canvas.toBlob(resolve, 'image/jpeg', 0.98);
       });
 
       if (frameBlob) {

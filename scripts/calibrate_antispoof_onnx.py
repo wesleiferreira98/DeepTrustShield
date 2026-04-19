@@ -170,6 +170,113 @@ def measure_image_quality(path: Path, cv2) -> dict | None:
         "contrast_std": float(np.std(gray) / 255.0),
         "overexposed_ratio": float(np.mean(value > 245)),
         "glare_ratio": float(np.mean((value > 245) & (saturation < 45))),
+        **calculate_frequency_features(gray, cv2),
+        **calculate_skin_frequency_features(gray, cv2),
+    }
+
+
+def calculate_frequency_features(gray_image: np.ndarray, cv2) -> dict[str, float]:
+    if gray_image is None or gray_image.size == 0:
+        return {
+            "frequency_peak_score": 0.0,
+            "high_frequency_energy": 0.0,
+            "horizontal_band_energy": 0.0,
+            "vertical_band_energy": 0.0,
+            "moire_score": 0.0,
+        }
+
+    resized = cv2.resize(gray_image, (128, 128), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
+    window = np.outer(np.hanning(resized.shape[0]), np.hanning(resized.shape[1])).astype(np.float32)
+    normalized = (resized - float(np.mean(resized))) * window
+    spectrum = np.fft.fftshift(np.fft.fft2(normalized))
+    magnitude = np.log1p(np.abs(spectrum)).astype(np.float32)
+
+    size = magnitude.shape[0]
+    center = size // 2
+    yy, xx = np.ogrid[:size, :size]
+    radius = np.sqrt((yy - center) ** 2 + (xx - center) ** 2)
+    high_mask = radius >= 18
+    very_high_mask = radius >= 34
+    high_values = magnitude[high_mask]
+    very_high_values = magnitude[very_high_mask] if np.any(very_high_mask) else high_values
+    if high_values.size == 0:
+        return {
+            "frequency_peak_score": 0.0,
+            "high_frequency_energy": 0.0,
+            "horizontal_band_energy": 0.0,
+            "vertical_band_energy": 0.0,
+            "moire_score": 0.0,
+        }
+
+    frequency_peak_score = float(np.max(high_values) / (np.mean(high_values) + 1e-6))
+    high_frequency_energy = float(np.mean(very_high_values) / (np.mean(magnitude) + 1e-6))
+    horizontal_mask = np.zeros_like(high_mask, dtype=bool)
+    horizontal_mask[center - 2 : center + 3, :] = True
+    vertical_mask = np.zeros_like(high_mask, dtype=bool)
+    vertical_mask[:, center - 2 : center + 3] = True
+    horizontal_values = magnitude[horizontal_mask & high_mask]
+    vertical_values = magnitude[vertical_mask & high_mask]
+    horizontal_band_energy = float(np.mean(horizontal_values) / (np.mean(high_values) + 1e-6)) if horizontal_values.size else 0.0
+    vertical_band_energy = float(np.mean(vertical_values) / (np.mean(high_values) + 1e-6)) if vertical_values.size else 0.0
+    peak_component = min(1.0, max(0.0, (frequency_peak_score - 2.2) / 4.8))
+    energy_component = min(1.0, max(0.0, (high_frequency_energy - 0.82) / 0.55))
+    band_component = min(1.0, max(0.0, (max(horizontal_band_energy, vertical_band_energy) - 0.95) / 0.75))
+    return {
+        "frequency_peak_score": frequency_peak_score,
+        "high_frequency_energy": high_frequency_energy,
+        "horizontal_band_energy": horizontal_band_energy,
+        "vertical_band_energy": vertical_band_energy,
+        "moire_score": float(0.45 * peak_component + 0.35 * energy_component + 0.20 * band_component),
+    }
+
+
+def extract_skin_frequency_patches(gray_image: np.ndarray) -> list[np.ndarray]:
+    if gray_image is None or gray_image.size == 0:
+        return []
+
+    height, width = gray_image.shape[:2]
+    if height < 72 or width < 72:
+        return []
+
+    regions = [
+        (0.34, 0.12, 0.66, 0.28),
+        (0.18, 0.45, 0.39, 0.70),
+        (0.61, 0.45, 0.82, 0.70),
+    ]
+    patches = []
+    for x1_ratio, y1_ratio, x2_ratio, y2_ratio in regions:
+        x1 = max(0, min(width - 1, int(width * x1_ratio)))
+        y1 = max(0, min(height - 1, int(height * y1_ratio)))
+        x2 = max(x1 + 1, min(width, int(width * x2_ratio)))
+        y2 = max(y1 + 1, min(height, int(height * y2_ratio)))
+        patch = gray_image[y1:y2, x1:x2]
+        if patch.size and patch.shape[0] >= 24 and patch.shape[1] >= 24:
+            patches.append(patch)
+    return patches
+
+
+def calculate_skin_frequency_features(gray_image: np.ndarray, cv2) -> dict[str, float]:
+    patches = extract_skin_frequency_patches(gray_image)
+    if not patches:
+        return {
+            "skin_patch_count": 0.0,
+            "skin_frequency_peak_score_median": 0.0,
+            "skin_high_frequency_energy_median": 0.0,
+            "skin_moire_score_median": 0.0,
+            "skin_moire_score_max": 0.0,
+        }
+
+    patch_features = [calculate_frequency_features(patch, cv2) for patch in patches]
+    return {
+        "skin_patch_count": float(len(patch_features)),
+        "skin_frequency_peak_score_median": float(
+            np.median([item["frequency_peak_score"] for item in patch_features])
+        ),
+        "skin_high_frequency_energy_median": float(
+            np.median([item["high_frequency_energy"] for item in patch_features])
+        ),
+        "skin_moire_score_median": float(np.median([item["moire_score"] for item in patch_features])),
+        "skin_moire_score_max": float(np.max([item["moire_score"] for item in patch_features])),
     }
 
 
@@ -327,7 +434,23 @@ def main() -> None:
         p_spoof = aggregate_scores(frame_scores, args.aggregation)
         quality_summary = {
             key: float(np.median([item[key] for item in frame_quality])) if frame_quality else None
-            for key in ["brightness_mean", "brightness_p95", "contrast_std", "overexposed_ratio", "glare_ratio"]
+            for key in [
+                "brightness_mean",
+                "brightness_p95",
+                "contrast_std",
+                "overexposed_ratio",
+                "glare_ratio",
+                "frequency_peak_score",
+                "high_frequency_energy",
+                "horizontal_band_energy",
+                "vertical_band_energy",
+                "moire_score",
+                "skin_patch_count",
+                "skin_frequency_peak_score_median",
+                "skin_high_frequency_energy_median",
+                "skin_moire_score_median",
+                "skin_moire_score_max",
+            ]
         }
         rows.append(
             {

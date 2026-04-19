@@ -73,5 +73,6 @@ data/dataset_colab_rebuilt/
 data/manifests/kaggle_rebuild_manifest.csv
 data/**/*.zip
 data/**/*.tar.gz
+data/calibration/liveness_captures/
 *.onnx.*
 *.onnx

@@ -125,6 +125,42 @@ function LivenessAnalysisCard({ livenessAnalysis }) {
             <strong>{formatPercent(heuristicSignals.median_face_background_delta)}</strong>
           </div>
         )}
+        {typeof heuristicSignals.median_moire_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Moire/FFT</span>
+            <strong>{formatPercent(heuristicSignals.median_moire_score)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_frequency_peak_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Pico freq.</span>
+            <strong>{heuristicSignals.median_frequency_peak_score.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_high_frequency_energy === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Energia freq.</span>
+            <strong>{heuristicSignals.median_high_frequency_energy.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_skin_moire_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Moire pele</span>
+            <strong>{formatPercent(heuristicSignals.median_skin_moire_score)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_skin_frequency_peak_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Pico pele</span>
+            <strong>{heuristicSignals.median_skin_frequency_peak_score.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_skin_patch_count === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Patches pele</span>
+            <strong>{heuristicSignals.median_skin_patch_count.toFixed(0)}</strong>
+          </div>
+        )}
       </div>
 
       {Array.isArray(livenessModel?.frame_scores) && livenessModel.frame_scores.length > 0 && (
