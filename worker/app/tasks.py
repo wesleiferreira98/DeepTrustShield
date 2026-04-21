@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import logging
 import traceback
@@ -14,6 +15,7 @@ from app.pipeline.face_detection import detect_faces
 from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
 from app.pipeline.inference import run_inference, get_loaded_model_version
+from app.pipeline.audio_inference import run_audio_inference
 from app.db_models import Base, Job, Result, Artifact
 
 # Setup logging
@@ -110,6 +112,70 @@ def _default_flags() -> dict:
         "low_light": False,
         "face_too_small": False,
     }
+
+
+def calculate_audio_risk_level(p_fake: float, threshold: float) -> str:
+    if p_fake is None:
+        return "undetermined"
+    if p_fake < threshold:
+        return "low"
+    if p_fake < min(threshold + config.AUDIO_REVIEW_MARGIN, 0.80):
+        return "medium"
+    return "high"
+
+
+def process_deepfake_audio(job_id: str, audio_path: str):
+    """Pipeline for deepfake detection from one audio file."""
+    db = get_db()
+    start_time = time.time()
+    flags = _default_flags()
+
+    try:
+        update_stage(db, job_id, "validating_image")
+        if not audio_path or not os.path.exists(audio_path):
+            raise FileNotFoundError("Arquivo de audio nao encontrado")
+
+        update_stage(db, job_id, "preprocessing")
+        update_stage(db, job_id, "model_inference")
+        audio_result = run_audio_inference(
+            audio_path,
+            config.AUDIO_MODEL_PATH,
+            config.AUDIO_MODEL_SUMMARY_PATH,
+        )
+
+        update_stage(db, job_id, "calibrating_score")
+        p_fake = audio_result["p_fake"]
+        threshold = audio_result["threshold"]
+        risk_level = calculate_audio_risk_level(p_fake, threshold)
+
+        update_stage(db, job_id, "generating_evidence")
+        audio_summary = {
+            "threshold": threshold,
+            "decision": "fake" if p_fake >= threshold else "real",
+            "audio_info": audio_result.get("audio_info", {}),
+        }
+        save_artifact(db, job_id, original_meta=json.dumps({"audio_summary": audio_summary}))
+        save_result(db, job_id, p_fake, risk_level, flags, model_version=audio_result["model_version"])
+        update_stage(db, job_id, "done")
+
+        elapsed = time.time() - start_time
+        logger.info(
+            "[%s] Audio completed in %.2fs - p_fake: %.4f, threshold: %.4f, risk: %s",
+            job_id,
+            elapsed,
+            p_fake,
+            threshold,
+            risk_level,
+        )
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Audio error: {str(e)}")
+        logger.error(traceback.format_exc())
+        update_stage(db, job_id, "error", str(e))
+        save_result(db, job_id, None, "undetermined", flags, model_version="audio_deepfake_v1")
+
+    finally:
+        db.close()
 
 
 def process_deepfake_image(job_id: str, image_path: str, target_model: str = "auto"):

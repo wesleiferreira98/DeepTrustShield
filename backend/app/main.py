@@ -10,7 +10,7 @@ import time
 from redis import Redis
 
 from app.config import get_settings
-from app.api import deepfake, deepfake_video, liveness
+from app.api import deepfake, deepfake_audio, deepfake_video, liveness
 from app.db.database import engine, Base
 from app.services.retention_service import cleanup_expired_data
 
@@ -35,6 +35,7 @@ app = FastAPI(
     openapi_tags=[
         {"name": "deepfake", "description": "Analise de imagens (foto)."},
         {"name": "deepfake-video", "description": "Analise de videos curtos via frames."},
+        {"name": "deepfake-audio", "description": "Analise de audio contra clonagem/deepfake."},
         {"name": "liveness", "description": "Validacao de prova de vida por landmarks faciais."},
     ],
 )
@@ -42,6 +43,7 @@ app = FastAPI(
 RATE_LIMITED_PATHS = {
     "/v1/deepfake/image/analyze",
     "/v1/deepfake/video/analyze",
+    "/v1/deepfake/audio/analyze",
     "/v1/liveness/session",
     "/v1/liveness/analyze",
 }
@@ -108,6 +110,7 @@ app.mount("/artifacts", StaticFiles(directory=settings.artifacts_path), name="ar
 # Include routers
 app.include_router(deepfake.router, prefix="/v1/deepfake/image", tags=["deepfake"])
 app.include_router(deepfake_video.router, prefix="/v1/deepfake/video", tags=["deepfake-video"])
+app.include_router(deepfake_audio.router, prefix="/v1/deepfake/audio", tags=["deepfake-audio"])
 app.include_router(liveness.router, prefix="/v1/liveness", tags=["liveness"])
 
 

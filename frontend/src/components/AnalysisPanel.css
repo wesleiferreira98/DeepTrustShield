@@ -24,6 +24,11 @@
   display: block;
 }
 
+.audio-preview {
+  width: 100%;
+  max-width: 420px;
+}
+
 .bbox-overlay {
   position: absolute;
   border: 2px solid var(--color-primary);

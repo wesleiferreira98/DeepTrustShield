@@ -42,7 +42,7 @@ function Result({
           icon: ShieldCheck,
           color: 'success',
           label: 'Provavelmente Real',
-          description: 'A imagem parece ser autentica',
+          description: analysisMode === 'audio' ? 'O audio parece autentico' : 'A imagem parece ser autentica',
         };
       case 'medium':
         if (percent !== null && percent >= 70) {
@@ -57,14 +57,18 @@ function Result({
           icon: ShieldCheck,
           color: 'success-light',
           label: 'Provavelmente Real',
-          description: 'A imagem aparenta ser autentica, mas com ressalvas',
+          description: analysisMode === 'audio'
+            ? 'O audio aparenta ser autentico, mas com ressalvas'
+            : 'A imagem aparenta ser autentica, mas com ressalvas',
         };
       case 'high':
         return {
           icon: ShieldAlert,
           color: 'danger',
-          label: 'Deepfake Detectado',
-          description: 'Alta probabilidade de manipulacao detectada',
+          label: analysisMode === 'audio' ? 'Audio Fake Detectado' : 'Deepfake Detectado',
+          description: analysisMode === 'audio'
+            ? 'Alta probabilidade de audio sintetico ou clonado'
+            : 'Alta probabilidade de manipulacao detectada',
         };
       default:
         return {
@@ -134,7 +138,9 @@ function Result({
     <div className="result-container">
       <div className="result-preview">
         <div className="preview-wrapper">
-          {result.evidence?.face_crop_url ? (
+          {analysisMode === 'audio' && previewUrl ? (
+            <audio src={previewUrl} controls className="audio-preview" />
+          ) : result.evidence?.face_crop_url ? (
             <img
               src={result.evidence.face_crop_url}
               alt="Face analisada"
@@ -144,7 +150,9 @@ function Result({
             <img src={previewUrl} alt="Imagem original" className="preview-image" />
           ) : null}
         </div>
-        <p className="preview-label">{analysisMode === 'video' ? 'Frame de referencia' : 'Face analisada'}</p>
+        <p className="preview-label">
+          {analysisMode === 'video' ? 'Frame de referencia' : analysisMode === 'audio' ? 'Audio analisado' : 'Face analisada'}
+        </p>
       </div>
 
       <div className="result-panel">
@@ -235,12 +243,31 @@ function Result({
               )}
             </>
           )}
+          {result.audio_summary && (
+            <>
+              <div className="meta-item">
+                <span className="meta-label">Limite calibrado</span>
+                <span className="meta-value">{(result.audio_summary.threshold * 100).toFixed(1)}%</span>
+              </div>
+              <div className="meta-item">
+                <span className="meta-label">Decisao audio</span>
+                <span className="meta-value">{result.audio_summary.decision}</span>
+              </div>
+              {result.audio_summary.audio_info?.duration_seconds && (
+                <div className="meta-item">
+                  <span className="meta-label">Duracao</span>
+                  <span className="meta-value">{result.audio_summary.audio_info.duration_seconds.toFixed(2)}s</span>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {analysisMode === 'video' && livenessAnalysis && (
           <LivenessAnalysisCard livenessAnalysis={livenessAnalysis} />
         )}
 
+        {analysisMode !== 'audio' && (
         <div className="reanalyze-section">
           <h3>Reanalisar com outro modelo</h3>
           <div className="reanalyze-controls">
@@ -264,6 +291,7 @@ function Result({
           </div>
           {reanalysisError && <p className="reanalyze-error">{reanalysisError}</p>}
         </div>
+        )}
 
         {sortedComparison.length > 0 && (
           <div className="comparison-section">

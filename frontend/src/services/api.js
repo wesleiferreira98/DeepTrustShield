@@ -1,5 +1,6 @@
 const IMAGE_API_BASE = '/v1/deepfake/image';
 const VIDEO_API_BASE = '/v1/deepfake/video';
+const AUDIO_API_BASE = '/v1/deepfake/audio';
 const LIVENESS_API_BASE = '/v1/liveness';
 
 export async function analyzeImage(file, targetModel = 'auto') {
@@ -35,6 +36,23 @@ export async function analyzeVideo(frames, targetModel = 'auto') {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Erro ao enviar frames de video');
+  }
+
+  return response.json();
+}
+
+export async function analyzeAudio(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${AUDIO_API_BASE}/analyze`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erro ao enviar audio');
   }
 
   return response.json();
@@ -89,7 +107,7 @@ export async function createLivenessSession(detectorMode = 'mediapipe') {
 }
 
 export async function pollStatus(jobId, mode = 'image') {
-  const apiBase = mode === 'video' ? VIDEO_API_BASE : IMAGE_API_BASE;
+  const apiBase = mode === 'video' ? VIDEO_API_BASE : mode === 'audio' ? AUDIO_API_BASE : IMAGE_API_BASE;
   const response = await fetch(`${apiBase}/status/${jobId}`);
 
   if (!response.ok) {
@@ -101,7 +119,7 @@ export async function pollStatus(jobId, mode = 'image') {
 }
 
 export async function getResult(jobId, mode = 'image') {
-  const apiBase = mode === 'video' ? VIDEO_API_BASE : IMAGE_API_BASE;
+  const apiBase = mode === 'video' ? VIDEO_API_BASE : mode === 'audio' ? AUDIO_API_BASE : IMAGE_API_BASE;
   const response = await fetch(`${apiBase}/result/${jobId}`);
 
   if (!response.ok) {

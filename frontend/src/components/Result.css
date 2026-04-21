@@ -23,6 +23,12 @@
   display: block;
 }
 
+.result-preview .audio-preview {
+  width: 100%;
+  display: block;
+  padding: 16px;
+}
+
 .preview-label {
   text-align: center;
   font-size: 12px;

@@ -3,7 +3,7 @@ import Upload from './components/Upload'
 import AnalysisPanel from './components/AnalysisPanel'
 import Result from './components/Result'
 import LivenessFailureResult from './components/LivenessFailureResult'
-import { analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
+import { analyzeAudio, analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
 import './App.css'
 
 const POLL_INTERVAL_MS = 700
@@ -22,6 +22,7 @@ function App() {
   const [error, setError] = useState(null)
 
   const [sourceImageFile, setSourceImageFile] = useState(null)
+  const [sourceAudioFile, setSourceAudioFile] = useState(null)
   const [sourceVideoFrames, setSourceVideoFrames] = useState([])
 
   const [comparisonResults, setComparisonResults] = useState([])
@@ -61,7 +62,9 @@ function App() {
     try {
       const response = mode === 'video'
         ? await analyzeVideo(payload, targetModel)
-        : await analyzeImage(payload, targetModel)
+        : mode === 'audio'
+          ? await analyzeAudio(payload)
+          : await analyzeImage(payload, targetModel)
 
       setJobId(response.job_id)
       if (!isReanalysis) {
@@ -105,6 +108,7 @@ function App() {
   const handleImageUpload = useCallback(async (file, targetModel = 'auto') => {
     setAnalysisMode('image')
     setSourceImageFile(file)
+    setSourceAudioFile(null)
     setSourceVideoFrames([])
     setLivenessAnalysis(null)
     setLivenessFailureMessage(null)
@@ -118,6 +122,7 @@ function App() {
   const handleVideoUpload = useCallback(async (frames, targetModel = 'auto', preview = null, livenessResult = null) => {
     setAnalysisMode('video')
     setSourceImageFile(null)
+    setSourceAudioFile(null)
     setSourceVideoFrames(frames)
     setLivenessAnalysis(livenessResult)
     setLivenessFailureMessage(null)
@@ -133,6 +138,18 @@ function App() {
     await runAnalysisJob('video', targetModel, frames, false)
   }, [runAnalysisJob])
 
+  const handleAudioUpload = useCallback(async (file) => {
+    setAnalysisMode('audio')
+    setSourceImageFile(null)
+    setSourceAudioFile(file)
+    setSourceVideoFrames([])
+    setLivenessAnalysis(null)
+    setLivenessFailureMessage(null)
+    setPreviewUrl(URL.createObjectURL(file))
+
+    await runAnalysisJob('audio', 'audio_deepfake_v1', file, false)
+  }, [runAnalysisJob])
+
   const handleLivenessRejected = useCallback((frames, preview = null, livenessResult = null, message = null) => {
     setState('liveness_failed')
     setAnalysisMode('video')
@@ -142,6 +159,7 @@ function App() {
     setError(null)
     setComparisonResults([])
     setSourceImageFile(null)
+    setSourceAudioFile(null)
     setSourceVideoFrames(frames)
     setLivenessAnalysis(livenessResult)
     setLivenessFailureMessage(message)
@@ -166,8 +184,13 @@ function App() {
       return
     }
 
+    if (analysisMode === 'audio' && sourceAudioFile) {
+      await runAnalysisJob('audio', 'audio_deepfake_v1', sourceAudioFile, true)
+      return
+    }
+
     setReanalysisError('Nao encontramos o arquivo original para reanalise. Faça uma nova análise.')
-  }, [analysisMode, runAnalysisJob, sourceImageFile, sourceVideoFrames])
+  }, [analysisMode, runAnalysisJob, sourceAudioFile, sourceImageFile, sourceVideoFrames])
 
   const handleReset = useCallback(() => {
     setState('idle')
@@ -180,6 +203,7 @@ function App() {
     setLivenessFailureMessage(null)
     setError(null)
     setSourceImageFile(null)
+    setSourceAudioFile(null)
     setSourceVideoFrames([])
     setComparisonResults([])
     setReanalysisLoading(false)
@@ -200,6 +224,7 @@ function App() {
         {state === 'idle' && (
           <Upload
             onImageUpload={handleImageUpload}
+            onAudioUpload={handleAudioUpload}
             onVideoUpload={handleVideoUpload}
             onLivenessRejected={handleLivenessRejected}
           />
