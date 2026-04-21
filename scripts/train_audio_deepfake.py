@@ -167,7 +167,51 @@ def count_labels(rows: list[dict]) -> dict[str, int]:
     return {"real": counts.get("real", 0), "fake": counts.get("fake", 0)}
 
 
-def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device: torch.device) -> dict[str, float]:
+def metrics_from_probs(labels: list[int], probs: list[float], threshold: float = 0.5) -> dict[str, float]:
+    if not labels:
+        return {"auc": 0.0, "f1": 0.0, "acc": 0.0}
+
+    binary_preds = [1 if prob >= threshold else 0 for prob in probs]
+    auc = float(roc_auc_score(labels, probs)) if len(set(labels)) > 1 else 0.0
+    return {
+        "auc": auc,
+        "f1": float(f1_score(labels, binary_preds, zero_division=0)),
+        "acc": float(accuracy_score(labels, binary_preds)),
+    }
+
+
+def find_best_threshold(
+    labels: list[int],
+    probs: list[float],
+    *,
+    metric: str = "f1",
+) -> dict[str, float]:
+    if not labels or not probs:
+        return {"threshold": 0.5, "f1": 0.0, "acc": 0.0, "auc": 0.0}
+
+    candidates = sorted(set(float(prob) for prob in probs))
+    candidates = [0.0, *candidates, 1.0]
+    best = {"threshold": 0.5, **metrics_from_probs(labels, probs, threshold=0.5)}
+    for threshold in candidates:
+        metrics = metrics_from_probs(labels, probs, threshold=threshold)
+        is_better = (
+            metrics[metric] > best[metric]
+            or (
+                metrics[metric] == best[metric]
+                and metrics["acc"] > best["acc"]
+            )
+        )
+        if is_better:
+            best = {"threshold": float(threshold), **metrics}
+    return best
+
+
+def collect_predictions(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+) -> dict[str, float | list[float] | list[int]]:
     model.eval()
     total_loss = 0.0
     all_probs: list[float] = []
@@ -185,20 +229,22 @@ def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device:
             all_probs.extend(probs.detach().cpu().numpy().tolist())
             all_labels.extend(labels.detach().cpu().numpy().astype(int).tolist())
 
-    if not all_labels:
-        return {"loss": 0.0, "auc": 0.0, "f1": 0.0, "acc": 0.0}
-
-    binary_preds = [1 if prob >= 0.5 else 0 for prob in all_probs]
-    if len(set(all_labels)) > 1:
-        auc = float(roc_auc_score(all_labels, all_probs))
-    else:
-        auc = 0.0
-
+    base_metrics = metrics_from_probs(all_labels, all_probs, threshold=0.5)
     return {
-        "loss": total_loss / len(all_labels),
-        "auc": auc,
-        "f1": float(f1_score(all_labels, binary_preds, zero_division=0)),
-        "acc": float(accuracy_score(all_labels, binary_preds)),
+        "loss": total_loss / max(len(all_labels), 1),
+        **base_metrics,
+        "probs": all_probs,
+        "labels": all_labels,
+    }
+
+
+def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device: torch.device) -> dict[str, float]:
+    predictions = collect_predictions(model, loader, criterion, device)
+    return {
+        "loss": float(predictions["loss"]),
+        "auc": float(predictions["auc"]),
+        "f1": float(predictions["f1"]),
+        "acc": float(predictions["acc"]),
     }
 
 
@@ -413,13 +459,35 @@ def main() -> None:
     if checkpoint_path.exists():
         state = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(state["model_state_dict"])
+        best_epoch = int(state.get("best_epoch", best_epoch))
+        best_val_auc = float(state.get("best_val_auc", best_val_auc))
 
+    val_predictions = collect_predictions(model, val_loader, criterion, device)
+    threshold_calibration = find_best_threshold(
+        val_predictions["labels"],
+        val_predictions["probs"],
+        metric="f1",
+    )
     test_metrics = evaluate(model, test_loader, criterion, device) if test_rows else None
+    test_metrics_calibrated = None
+    if test_rows:
+        test_predictions = collect_predictions(model, test_loader, criterion, device)
+        calibrated_metrics = metrics_from_probs(
+            test_predictions["labels"],
+            test_predictions["probs"],
+            threshold=threshold_calibration["threshold"],
+        )
+        test_metrics_calibrated = {
+            "loss": float(test_predictions["loss"]),
+            **calibrated_metrics,
+            "threshold": threshold_calibration["threshold"],
+        }
     elapsed_minutes = (time.time() - started_at) / 60.0
 
     history_path = output_dir / "history.csv"
     summary_path = output_dir / "summary.json"
-    write_history_csv(history_path, history_rows)
+    if history_rows or not history_path.exists():
+        write_history_csv(history_path, history_rows)
 
     summary = {
         "task": "audio_deepfake_detection",
@@ -445,8 +513,10 @@ def main() -> None:
         "sample_audio_info": sample_audio_info(train_rows),
         "best_epoch": best_epoch,
         "best_val_auc": best_val_auc,
+        "threshold_calibration": threshold_calibration,
         "elapsed_minutes": round(elapsed_minutes, 3),
         "test_metrics": test_metrics,
+        "test_metrics_calibrated": test_metrics_calibrated,
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -458,6 +528,12 @@ def main() -> None:
             f"test_auc = {test_metrics['auc']:.4f} "
             f"test_f1 = {test_metrics['f1']:.4f} "
             f"test_acc = {test_metrics['acc']:.4f}"
+        )
+    if test_metrics_calibrated:
+        print(
+            f"calibrated_threshold = {test_metrics_calibrated['threshold']:.4f} "
+            f"test_f1_cal = {test_metrics_calibrated['f1']:.4f} "
+            f"test_acc_cal = {test_metrics_calibrated['acc']:.4f}"
         )
     print(f"history = {history_path}")
     print(f"summary = {summary_path}")

@@ -79,3 +79,6 @@ data/calibration/liveness_captures/
 LA.zip
 audio/data/raw/asvspoof2019_downloads/LA.zip
 *.db
+audio/data/
+audio/models/
+*.flac
