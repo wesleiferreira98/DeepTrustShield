@@ -3,7 +3,8 @@ import './Result.css';
 const LIVENESS_REASON_LABELS = {
   model_spoof_score_high: 'Modelo ONNX detectou padrao de foto/tela/replay',
   planar_motion_without_internal_face_change: 'Movimento plano sem mudanca interna do rosto',
-  screen_rectangle_detected: 'Retangulo de tela detectado ao redor da face',
+  screen_rectangle_detected: 'Bordas/retangulos fortes no enquadramento: use um fundo mais liso ou remova tela/foto',
+  close_screen_low_local_motion: 'Sinais de tela/foto proxima: face muito diferente do fundo e pouco movimento local real',
   borderline_spoof_score_without_liveness_confirmation: 'Score ONNX em zona cinza sem confirmacao forte de vida',
   borderline_spoof_score_with_high_frame: 'Score ONNX em zona cinza com frame individual suspeito',
   fusion_low_internal_motion_high_face_background_delta: 'Sinais combinados de tela: pouco movimento interno e face muito diferente do fundo',
@@ -119,6 +120,12 @@ function LivenessAnalysisCard({ livenessAnalysis }) {
             <strong>{formatPercent(heuristicSignals.internal_motion)}</strong>
           </div>
         )}
+        {typeof heuristicSignals.compensated_local_motion === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Mov. local</span>
+            <strong>{formatPercent(heuristicSignals.compensated_local_motion)}</strong>
+          </div>
+        )}
         {typeof heuristicSignals.median_face_background_delta === 'number' && (
           <div className="liveness-analysis-item">
             <span className="meta-label">Face x fundo</span>
@@ -137,6 +144,30 @@ function LivenessAnalysisCard({ livenessAnalysis }) {
             <strong>{heuristicSignals.median_frequency_peak_score.toFixed(2)}</strong>
           </div>
         )}
+        {typeof heuristicSignals.median_isolated_peak_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Pico isolado</span>
+            <strong>{heuristicSignals.median_isolated_peak_score.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_frequency_grid_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Grade FFT</span>
+            <strong>{heuristicSignals.median_frequency_grid_score.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_frequency_directional_score === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Direcao FFT</span>
+            <strong>{heuristicSignals.median_frequency_directional_score.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_frequency_ring_contrast === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">Anel FFT</span>
+            <strong>{heuristicSignals.median_frequency_ring_contrast.toFixed(2)}</strong>
+          </div>
+        )}
         {typeof heuristicSignals.median_high_frequency_energy === 'number' && (
           <div className="liveness-analysis-item">
             <span className="meta-label">Energia freq.</span>
@@ -153,6 +184,42 @@ function LivenessAnalysisCard({ livenessAnalysis }) {
           <div className="liveness-analysis-item">
             <span className="meta-label">Pico pele</span>
             <strong>{heuristicSignals.median_skin_frequency_peak_score.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_lbp_entropy === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">LBP entropia</span>
+            <strong>{heuristicSignals.median_lbp_entropy.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_lbp_uniformity === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">LBP uniforme</span>
+            <strong>{heuristicSignals.median_lbp_uniformity.toFixed(3)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_lbp_local_contrast === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">LBP contraste</span>
+            <strong>{formatPercent(heuristicSignals.median_lbp_local_contrast)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_skin_lbp_entropy === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">LBP pele ent.</span>
+            <strong>{heuristicSignals.median_skin_lbp_entropy.toFixed(2)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_skin_lbp_uniformity === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">LBP pele uni.</span>
+            <strong>{heuristicSignals.median_skin_lbp_uniformity.toFixed(3)}</strong>
+          </div>
+        )}
+        {typeof heuristicSignals.median_skin_lbp_local_contrast === 'number' && (
+          <div className="liveness-analysis-item">
+            <span className="meta-label">LBP pele cont.</span>
+            <strong>{formatPercent(heuristicSignals.median_skin_lbp_local_contrast)}</strong>
           </div>
         )}
         {typeof heuristicSignals.median_skin_patch_count === 'number' && (

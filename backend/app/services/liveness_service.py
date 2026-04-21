@@ -28,9 +28,13 @@ MOUTH_OPEN_MIN_ABS_DELTA = 0.065
 HEAD_TURN_TARGET_DELTA = 0.10
 HEAD_PITCH_TARGET_DELTA = 0.07
 ANTI_SPOOF_INTERNAL_MOTION_MIN = 0.085
+ANTI_SPOOF_COMPENSATED_LOCAL_MOTION_MIN = 0.025
 ANTI_SPOOF_GEOMETRIC_MOTION_MIN = 0.13
 ANTI_SPOOF_LOW_TEXTURE_LAPLACIAN = 12.0
-ANTI_SPOOF_SCREEN_RECTANGLE_MIN = 0.62
+ANTI_SPOOF_SCREEN_RECTANGLE_MIN = 0.30
+ANTI_SPOOF_SCREEN_RECTANGLE_HARD_MIN = 0.30
+ANTI_SPOOF_CLOSE_SCREEN_FACE_BACKGROUND_MIN = 0.25
+ANTI_SPOOF_CLOSE_SCREEN_LOCAL_MOTION_MAX = 0.012
 ANTI_SPOOF_PLANAR_MOTION_PENALTY = 0.30
 
 
@@ -195,6 +199,103 @@ def _count_blinks(ear_values: list[float]) -> tuple[int, float, float]:
             was_closed = False
 
     return blinks, baseline, threshold
+
+
+def _normalize_landmark_points(landmarks, indices: list[int]) -> dict[int, tuple[float, float]]:
+    try:
+        left_eye = landmarks[33]
+        right_eye = landmarks[263]
+    except Exception:
+        return {}
+
+    eye_dx = right_eye.x - left_eye.x
+    eye_dy = right_eye.y - left_eye.y
+    eye_dist = float(np.hypot(eye_dx, eye_dy))
+    if not np.isfinite(eye_dist) or eye_dist <= 1e-6:
+        return {}
+
+    angle = float(np.arctan2(eye_dy, eye_dx))
+    cos_a = float(np.cos(-angle))
+    sin_a = float(np.sin(-angle))
+    origin_x = (left_eye.x + right_eye.x) / 2.0
+    origin_y = (left_eye.y + right_eye.y) / 2.0
+
+    normalized: dict[int, tuple[float, float]] = {}
+    for index in indices:
+        try:
+            landmark = landmarks[index]
+        except Exception:
+            continue
+        centered_x = (landmark.x - origin_x) / eye_dist
+        centered_y = (landmark.y - origin_y) / eye_dist
+        normalized[index] = (
+            centered_x * cos_a - centered_y * sin_a,
+            centered_x * sin_a + centered_y * cos_a,
+        )
+    return normalized
+
+
+def _calculate_compensated_local_motion(all_landmarks: list[Any | None]) -> dict[str, float]:
+    local_indices = [
+        13,
+        14,
+        61,
+        291,
+        78,
+        308,
+        160,
+        158,
+        153,
+        144,
+        385,
+        387,
+        373,
+        380,
+    ]
+    previous_points: dict[int, tuple[float, float]] | None = None
+    local_movements: list[float] = []
+    mouth_movements: list[float] = []
+    eye_movements: list[float] = []
+
+    for landmarks in all_landmarks:
+        if landmarks is None:
+            continue
+
+        current_points = _normalize_landmark_points(landmarks, local_indices)
+        if not current_points:
+            continue
+
+        if previous_points:
+            shared_indices = [index for index in local_indices if index in previous_points and index in current_points]
+            if shared_indices:
+                deltas = [
+                    float(
+                        np.hypot(
+                            current_points[index][0] - previous_points[index][0],
+                            current_points[index][1] - previous_points[index][1],
+                        )
+                    )
+                    for index in shared_indices
+                ]
+                local_movements.append(float(np.median(deltas)))
+
+                mouth_indices = [13, 14, 61, 291, 78, 308]
+                mouth_deltas = [deltas[shared_indices.index(index)] for index in mouth_indices if index in shared_indices]
+                if mouth_deltas:
+                    mouth_movements.append(float(np.median(mouth_deltas)))
+
+                eye_indices = [160, 158, 153, 144, 385, 387, 373, 380]
+                eye_deltas = [deltas[shared_indices.index(index)] for index in eye_indices if index in shared_indices]
+                if eye_deltas:
+                    eye_movements.append(float(np.median(eye_deltas)))
+
+        previous_points = current_points
+
+    return {
+        "compensated_local_motion": float(np.percentile(local_movements, 75)) if local_movements else 0.0,
+        "compensated_mouth_motion": float(np.percentile(mouth_movements, 75)) if mouth_movements else 0.0,
+        "compensated_eye_motion": float(np.percentile(eye_movements, 75)) if eye_movements else 0.0,
+    }
 
 
 def _detect_blink_events(indexed_metrics: list[tuple[int, FrameMetrics]]) -> tuple[list[dict[str, Any]], float, float]:
@@ -480,14 +581,18 @@ def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> f
 
         if abs_dy >= max(abs_dx * 3.5, 1.0):
             line_x = (x1 + x2) / 2
-            if face_left - face_width * 0.15 <= line_x <= face_right + face_width * 0.15:
+            left_distance = face_left - line_x
+            right_distance = line_x - face_right
+            is_left_border = face_width * 0.04 <= left_distance <= face_width * 0.90
+            is_right_border = face_width * 0.04 <= right_distance <= face_width * 0.90
+            if not (is_left_border or is_right_border):
                 continue
             overlap = _line_overlap_ratio(y_min, y_max, face_top, face_bottom)
-            if overlap < 0.35:
+            if overlap < 0.45:
                 continue
             length_score = min(1.0, length / max(face_height * 1.35, 1.0))
             edge_strength = 0.55 * overlap + 0.45 * length_score
-            if line_x < face_center_x:
+            if is_left_border:
                 if edge_strength > left_vertical:
                     left_vertical = edge_strength
                     vertical_positions["left"] = line_x
@@ -497,14 +602,18 @@ def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> f
 
         if abs_dx >= max(abs_dy * 3.5, 1.0):
             line_y = (y1 + y2) / 2
-            if face_top - face_height * 0.15 <= line_y <= face_bottom + face_height * 0.15:
+            top_distance = face_top - line_y
+            bottom_distance = line_y - face_bottom
+            is_top_border = face_height * 0.05 <= top_distance <= face_height * 0.90
+            is_bottom_border = face_height * 0.05 <= bottom_distance <= face_height * 0.90
+            if not (is_top_border or is_bottom_border):
                 continue
             overlap = _line_overlap_ratio(x_min, x_max, face_left, face_right)
-            if overlap < 0.35:
+            if overlap < 0.45:
                 continue
             length_score = min(1.0, length / max(face_width * 1.35, 1.0))
             edge_strength = 0.55 * overlap + 0.45 * length_score
-            if line_y < face_center_y:
+            if is_top_border:
                 if edge_strength > top_horizontal:
                     top_horizontal = edge_strength
                     horizontal_positions["top"] = line_y
@@ -515,26 +624,34 @@ def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> f
     vertical_pair_score = 0.0
     if left_vertical and right_vertical:
         span = vertical_positions["right"] - vertical_positions["left"]
-        span_score = min(1.0, max(0.0, (span / max(face_width, 1) - 1.05) / 1.55))
+        span_ratio = span / max(face_width, 1)
+        if span_ratio > 2.85:
+            span_score = 0.0
+        else:
+            span_score = min(1.0, max(0.0, (span_ratio - 1.05) / 1.35))
         vertical_pair_score = min(1.0, 0.45 + 0.35 * min(left_vertical, right_vertical) + 0.20 * span_score)
     else:
-        vertical_pair_score = 0.38 * max(left_vertical, right_vertical)
+        vertical_pair_score = 0.12 * max(left_vertical, right_vertical)
 
     horizontal_pair_score = 0.0
     if top_horizontal and bottom_horizontal:
         span = horizontal_positions["bottom"] - horizontal_positions["top"]
-        span_score = min(1.0, max(0.0, (span / max(face_height, 1) - 1.05) / 1.55))
+        span_ratio = span / max(face_height, 1)
+        if span_ratio > 2.85:
+            span_score = 0.0
+        else:
+            span_score = min(1.0, max(0.0, (span_ratio - 1.05) / 1.35))
         horizontal_pair_score = min(1.0, 0.45 + 0.35 * min(top_horizontal, bottom_horizontal) + 0.20 * span_score)
     else:
-        horizontal_pair_score = 0.35 * max(top_horizontal, bottom_horizontal)
+        horizontal_pair_score = 0.10 * max(top_horizontal, bottom_horizontal)
 
     mixed_score = 0.0
     if max(left_vertical, right_vertical) and max(top_horizontal, bottom_horizontal):
         mixed_score = min(
             1.0,
-            0.30
-            + 0.38 * max(left_vertical, right_vertical)
-            + 0.32 * max(top_horizontal, bottom_horizontal),
+            0.18
+            + 0.32 * max(left_vertical, right_vertical)
+            + 0.25 * max(top_horizontal, bottom_horizontal),
         )
 
     return float(max(vertical_pair_score, horizontal_pair_score, mixed_score))
@@ -645,6 +762,10 @@ def _calculate_frequency_features(gray_crop) -> dict[str, float]:
             "high_frequency_energy": 0.0,
             "horizontal_band_energy": 0.0,
             "vertical_band_energy": 0.0,
+            "isolated_peak_score": 0.0,
+            "frequency_grid_score": 0.0,
+            "frequency_directional_score": 0.0,
+            "frequency_ring_contrast": 0.0,
             "moire_score": 0.0,
         }
 
@@ -666,6 +787,10 @@ def _calculate_frequency_features(gray_crop) -> dict[str, float]:
             "high_frequency_energy": 0.0,
             "horizontal_band_energy": 0.0,
             "vertical_band_energy": 0.0,
+            "isolated_peak_score": 0.0,
+            "frequency_grid_score": 0.0,
+            "frequency_directional_score": 0.0,
+            "frequency_ring_contrast": 0.0,
             "moire_score": 0.0,
         }
 
@@ -681,16 +806,44 @@ def _calculate_frequency_features(gray_crop) -> dict[str, float]:
     vertical_values = magnitude[vertical_mask & high_mask]
     horizontal_band_energy = float(np.mean(horizontal_values) / (np.mean(high_values) + 1e-6)) if horizontal_values.size else 0.0
     vertical_band_energy = float(np.mean(vertical_values) / (np.mean(high_values) + 1e-6)) if vertical_values.size else 0.0
+
+    local_mean = cv2.blur(magnitude, (9, 9))
+    local_peak_map = magnitude / (local_mean + 1e-6)
+    isolated_peak_score = float(np.max(local_peak_map[high_mask])) if np.any(high_mask) else 0.0
+
+    mid_mask = (radius >= 12) & (radius < 30)
+    ring_mid = magnitude[mid_mask]
+    ring_high = magnitude[very_high_mask] if np.any(very_high_mask) else high_values
+    frequency_ring_contrast = float(np.mean(ring_high) / (np.mean(ring_mid) + 1e-6)) if ring_mid.size else 0.0
+    band_max = max(horizontal_band_energy, vertical_band_energy)
+    band_min = min(horizontal_band_energy, vertical_band_energy)
+    frequency_directional_score = float(max(0.0, band_max - band_min))
+    frequency_grid_score = float(min(horizontal_band_energy, vertical_band_energy))
+
     peak_component = min(1.0, max(0.0, (frequency_peak_score - 2.2) / 4.8))
     energy_component = min(1.0, max(0.0, (high_frequency_energy - 0.82) / 0.55))
     band_component = min(1.0, max(0.0, (max(horizontal_band_energy, vertical_band_energy) - 0.95) / 0.75))
-    moire_score = float(0.45 * peak_component + 0.35 * energy_component + 0.20 * band_component)
+    isolated_peak_component = min(1.0, max(0.0, (isolated_peak_score - 1.28) / 1.20))
+    grid_component = min(1.0, max(0.0, (frequency_grid_score - 0.70) / 0.45))
+    ring_component = min(1.0, max(0.0, (frequency_ring_contrast - 0.82) / 0.40))
+    moire_score = float(
+        0.30 * peak_component
+        + 0.20 * energy_component
+        + 0.15 * band_component
+        + 0.20 * isolated_peak_component
+        + 0.10 * grid_component
+        + 0.05 * ring_component
+    )
 
     return {
         "frequency_peak_score": frequency_peak_score,
         "high_frequency_energy": high_frequency_energy,
         "horizontal_band_energy": horizontal_band_energy,
         "vertical_band_energy": vertical_band_energy,
+        "isolated_peak_score": isolated_peak_score,
+        "frequency_grid_score": frequency_grid_score,
+        "frequency_directional_score": frequency_directional_score,
+        "frequency_ring_contrast": frequency_ring_contrast,
         "moire_score": moire_score,
     }
 
@@ -746,6 +899,71 @@ def _calculate_skin_frequency_features(gray_crop) -> dict[str, float]:
     }
 
 
+def _calculate_lbp_features(gray_crop) -> dict[str, float]:
+    if gray_crop is None or gray_crop.size == 0:
+        return {
+            "lbp_entropy": 0.0,
+            "lbp_uniformity": 0.0,
+            "lbp_local_contrast": 0.0,
+        }
+
+    resized = cv2.resize(gray_crop, (96, 96), interpolation=cv2.INTER_AREA).astype(np.float32)
+    center = resized[1:-1, 1:-1]
+    neighbors = [
+        resized[:-2, :-2],
+        resized[:-2, 1:-1],
+        resized[:-2, 2:],
+        resized[1:-1, 2:],
+        resized[2:, 2:],
+        resized[2:, 1:-1],
+        resized[2:, :-2],
+        resized[1:-1, :-2],
+    ]
+
+    lbp = np.zeros(center.shape, dtype=np.uint8)
+    contrast_acc = np.zeros(center.shape, dtype=np.float32)
+    for bit, neighbor in enumerate(neighbors):
+        lbp |= ((neighbor >= center).astype(np.uint8) << bit)
+        contrast_acc += np.abs(neighbor - center)
+
+    hist = np.bincount(lbp.ravel(), minlength=256).astype(np.float32)
+    hist_sum = float(np.sum(hist))
+    if hist_sum <= 0:
+        return {
+            "lbp_entropy": 0.0,
+            "lbp_uniformity": 0.0,
+            "lbp_local_contrast": 0.0,
+        }
+
+    probability = hist / hist_sum
+    non_zero = probability[probability > 0]
+    entropy = float(-np.sum(non_zero * np.log2(non_zero)) / 8.0)
+    uniformity = float(np.sum(probability * probability))
+    local_contrast = float(np.mean(contrast_acc / 8.0) / 255.0)
+    return {
+        "lbp_entropy": entropy,
+        "lbp_uniformity": uniformity,
+        "lbp_local_contrast": local_contrast,
+    }
+
+
+def _calculate_skin_lbp_features(gray_crop) -> dict[str, float]:
+    patches = _extract_skin_frequency_patches(gray_crop)
+    if not patches:
+        return {
+            "skin_lbp_entropy": 0.0,
+            "skin_lbp_uniformity": 0.0,
+            "skin_lbp_local_contrast": 0.0,
+        }
+
+    patch_features = [_calculate_lbp_features(patch) for patch in patches]
+    return {
+        "skin_lbp_entropy": float(np.median([item["lbp_entropy"] for item in patch_features])),
+        "skin_lbp_uniformity": float(np.median([item["lbp_uniformity"] for item in patch_features])),
+        "skin_lbp_local_contrast": float(np.median([item["lbp_local_contrast"] for item in patch_features])),
+    }
+
+
 def _calculate_spoof_frame_features(image, landmarks) -> dict[str, Any] | None:
     face_bbox = _extract_face_bbox(image, landmarks)
     if face_bbox is None:
@@ -768,6 +986,8 @@ def _calculate_spoof_frame_features(image, landmarks) -> dict[str, Any] | None:
     screen_rectangle_score = _score_screen_rectangle(image, face_bbox)
     frequency_features = _calculate_frequency_features(gray)
     skin_frequency_features = _calculate_skin_frequency_features(gray)
+    lbp_features = _calculate_lbp_features(gray)
+    skin_lbp_features = _calculate_skin_lbp_features(gray)
 
     return {
         "laplacian_var": laplacian_var,
@@ -780,6 +1000,8 @@ def _calculate_spoof_frame_features(image, landmarks) -> dict[str, Any] | None:
         "screen_rectangle_score": screen_rectangle_score,
         **frequency_features,
         **skin_frequency_features,
+        **lbp_features,
+        **skin_lbp_features,
         **background_features,
     }
 
@@ -847,6 +1069,7 @@ def _analyze_spoof_signals(
     head_up_delta: float,
     head_down_delta: float,
     frame_spoof_features: list[dict[str, Any]],
+    compensated_motion: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     threshold = settings.liveness_anti_spoof_threshold
     if not settings.liveness_anti_spoof_enabled:
@@ -861,6 +1084,10 @@ def _analyze_spoof_signals(
 
     ear_range = float(max(ear_values) - min(ear_values)) if ear_values else 0.0
     internal_motion = float(ear_range + mouth_open_abs_delta + smile_abs_delta)
+    compensated_motion = compensated_motion or {}
+    compensated_local_motion = float(compensated_motion.get("compensated_local_motion", 0.0))
+    compensated_mouth_motion = float(compensated_motion.get("compensated_mouth_motion", 0.0))
+    compensated_eye_motion = float(compensated_motion.get("compensated_eye_motion", 0.0))
     geometric_motion = float(
         range_ratio
         + max(head_left_delta, head_right_delta)
@@ -880,11 +1107,21 @@ def _analyze_spoof_signals(
     median_high_frequency_energy = float(np.median([item["high_frequency_energy"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_horizontal_band_energy = float(np.median([item["horizontal_band_energy"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_vertical_band_energy = float(np.median([item["vertical_band_energy"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_isolated_peak_score = float(np.median([item["isolated_peak_score"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_frequency_grid_score = float(np.median([item["frequency_grid_score"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_frequency_directional_score = float(np.median([item["frequency_directional_score"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_frequency_ring_contrast = float(np.median([item["frequency_ring_contrast"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_skin_patch_count = float(np.median([item["skin_patch_count"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_skin_moire_score = float(np.median([item["skin_moire_score_median"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     max_skin_moire_score = float(np.max([item["skin_moire_score_max"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_skin_frequency_peak_score = float(np.median([item["skin_frequency_peak_score_median"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
     median_skin_high_frequency_energy = float(np.median([item["skin_high_frequency_energy_median"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_lbp_entropy = float(np.median([item["lbp_entropy"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_lbp_uniformity = float(np.median([item["lbp_uniformity"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_lbp_local_contrast = float(np.median([item["lbp_local_contrast"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_skin_lbp_entropy = float(np.median([item["skin_lbp_entropy"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_skin_lbp_uniformity = float(np.median([item["skin_lbp_uniformity"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
+    median_skin_lbp_local_contrast = float(np.median([item["skin_lbp_local_contrast"] for item in frame_spoof_features])) if frame_spoof_features else 0.0
 
     score = 1.0
     reasons: list[str] = []
@@ -905,12 +1142,25 @@ def _analyze_spoof_signals(
         score -= 0.12
         reasons.append("low_face_texture")
 
-    if (
+    compensated_motion_too_low = compensated_local_motion < ANTI_SPOOF_COMPENSATED_LOCAL_MOTION_MIN
+    close_screen_suspected = (
+        median_face_background_delta >= ANTI_SPOOF_CLOSE_SCREEN_FACE_BACKGROUND_MIN
+        and compensated_local_motion <= ANTI_SPOOF_CLOSE_SCREEN_LOCAL_MOTION_MAX
+    )
+
+    if median_screen_rectangle_score >= ANTI_SPOOF_SCREEN_RECTANGLE_HARD_MIN:
+        score -= 0.65
+        reasons.append("screen_rectangle_detected")
+    elif (
         median_screen_rectangle_score >= ANTI_SPOOF_SCREEN_RECTANGLE_MIN
-        and internal_motion < ANTI_SPOOF_INTERNAL_MOTION_MIN
+        and (internal_motion < ANTI_SPOOF_INTERNAL_MOTION_MIN or compensated_motion_too_low)
     ):
         score -= 0.55
         reasons.append("screen_rectangle_detected")
+
+    if close_screen_suspected:
+        score -= 0.55
+        reasons.append("close_screen_low_local_motion")
 
     score = float(max(0.0, min(1.0, score)))
 
@@ -923,6 +1173,11 @@ def _analyze_spoof_signals(
         "signals": {
             "internal_motion": internal_motion,
             "internal_motion_min": ANTI_SPOOF_INTERNAL_MOTION_MIN,
+            "compensated_local_motion": compensated_local_motion,
+            "compensated_local_motion_min": ANTI_SPOOF_COMPENSATED_LOCAL_MOTION_MIN,
+            "close_screen_local_motion_max": ANTI_SPOOF_CLOSE_SCREEN_LOCAL_MOTION_MAX,
+            "compensated_mouth_motion": compensated_mouth_motion,
+            "compensated_eye_motion": compensated_eye_motion,
             "geometric_motion": geometric_motion,
             "geometric_motion_min": ANTI_SPOOF_GEOMETRIC_MOTION_MIN,
             "ear_range": ear_range,
@@ -937,17 +1192,29 @@ def _analyze_spoof_signals(
             "median_edge_density": median_edge_density,
             "median_screen_rectangle_score": median_screen_rectangle_score,
             "screen_rectangle_min": ANTI_SPOOF_SCREEN_RECTANGLE_MIN,
+            "screen_rectangle_hard_min": ANTI_SPOOF_SCREEN_RECTANGLE_HARD_MIN,
             "median_face_background_delta": median_face_background_delta,
+            "close_screen_face_background_min": ANTI_SPOOF_CLOSE_SCREEN_FACE_BACKGROUND_MIN,
             "median_moire_score": median_moire_score,
             "median_frequency_peak_score": median_frequency_peak_score,
             "median_high_frequency_energy": median_high_frequency_energy,
             "median_horizontal_band_energy": median_horizontal_band_energy,
             "median_vertical_band_energy": median_vertical_band_energy,
+            "median_isolated_peak_score": median_isolated_peak_score,
+            "median_frequency_grid_score": median_frequency_grid_score,
+            "median_frequency_directional_score": median_frequency_directional_score,
+            "median_frequency_ring_contrast": median_frequency_ring_contrast,
             "median_skin_patch_count": median_skin_patch_count,
             "median_skin_moire_score": median_skin_moire_score,
             "max_skin_moire_score": max_skin_moire_score,
             "median_skin_frequency_peak_score": median_skin_frequency_peak_score,
             "median_skin_high_frequency_energy": median_skin_high_frequency_energy,
+            "median_lbp_entropy": median_lbp_entropy,
+            "median_lbp_uniformity": median_lbp_uniformity,
+            "median_lbp_local_contrast": median_lbp_local_contrast,
+            "median_skin_lbp_entropy": median_skin_lbp_entropy,
+            "median_skin_lbp_uniformity": median_skin_lbp_uniformity,
+            "median_skin_lbp_local_contrast": median_skin_lbp_local_contrast,
             "valid_frame_ratio": float(valid_frames / total_frames) if total_frames else 0.0,
         },
     }
@@ -1053,6 +1320,7 @@ def analyze_liveness_frames(
     is_mobile_capture = bool(capture_source == "phone_camera" or device_class in {"mobile", "tablet"})
 
     all_frame_metrics: list[FrameMetrics | None] = []
+    all_frame_landmarks: list[Any | None] = []
     frame_spoof_features: list[dict[str, Any]] = []
     antispoof_crops: list[Any] = []
     total_frames = len(frame_bytes_list)
@@ -1070,11 +1338,13 @@ def analyze_liveness_frames(
             landmarks = face_detector.detect_landmarks(rgb)
             if not landmarks:
                 all_frame_metrics.append(None)
+                all_frame_landmarks.append(None)
                 continue
 
             frame_metrics = _extract_metrics(landmarks)
             if frame_metrics:
                 all_frame_metrics.append(frame_metrics)
+                all_frame_landmarks.append(landmarks)
                 spoof_features = _calculate_spoof_frame_features(image, landmarks)
                 if spoof_features:
                     frame_spoof_features.append(spoof_features)
@@ -1083,6 +1353,7 @@ def analyze_liveness_frames(
                     antispoof_crops.append(face_crop)
             else:
                 all_frame_metrics.append(None)
+                all_frame_landmarks.append(None)
     finally:
         face_detector.close()
 
@@ -1197,6 +1468,7 @@ def analyze_liveness_frames(
     head_right_passed = head_right_delta >= HEAD_TURN_TARGET_DELTA
     head_up_passed = head_up_delta >= HEAD_PITCH_TARGET_DELTA
     head_down_passed = head_down_delta >= HEAD_PITCH_TARGET_DELTA
+    compensated_motion = _calculate_compensated_local_motion(all_frame_landmarks)
     heuristic_spoof_analysis = _analyze_spoof_signals(
         settings=runtime_settings,
         valid_frames=valid_frames,
@@ -1210,14 +1482,28 @@ def analyze_liveness_frames(
         head_up_delta=head_up_delta,
         head_down_delta=head_down_delta,
         frame_spoof_features=frame_spoof_features,
+        compensated_motion=compensated_motion,
     )
     model_spoof_analysis = analyze_antispoof_crops(antispoof_crops, runtime_settings)
     model_p_spoof_raw = float(model_spoof_analysis.get("p_spoof", 0.0))
     model_p_spoof = model_p_spoof_raw
     review_threshold = float(runtime_settings.liveness_onnx_antispoof_review_threshold)
     mobile_hard_threshold = float(runtime_settings.liveness_mobile_onnx_hard_threshold)
+    model_decision_enabled = bool(runtime_settings.liveness_onnx_antispoof_decision_enabled)
+
+    if model_spoof_analysis.get("enabled") and not model_decision_enabled:
+        model_spoof_analysis["decision_enabled"] = False
+        model_spoof_analysis["diagnostic_passed"] = model_spoof_analysis.get("passed")
+        model_spoof_analysis["diagnostic_reasons"] = list(model_spoof_analysis.get("reasons", []))
+        model_spoof_analysis["passed"] = True
+        model_spoof_analysis["score"] = 1.0
+        model_spoof_analysis["reasons"] = []
+    elif model_spoof_analysis.get("enabled"):
+        model_spoof_analysis["decision_enabled"] = True
 
     if (
+        model_decision_enabled
+        and
         is_mobile_capture
         and model_spoof_analysis.get("enabled")
         and model_spoof_analysis.get("threshold") is not None
@@ -1261,7 +1547,7 @@ def analyze_liveness_frames(
     if model_quality_limited and model_spoof_analysis.get("enabled"):
         model_spoof_analysis["quality"] = quality_details
 
-    quality_should_block = bool(model_quality_limited and model_p_spoof >= review_threshold)
+    quality_should_block = bool(model_decision_enabled and model_quality_limited and model_p_spoof >= review_threshold)
     if quality_should_block and model_spoof_analysis.get("enabled") and not model_has_hard_spoof_signal:
         _replace_model_failure_with_quality_reason(model_spoof_analysis, "insufficient_antispoof_quality")
         model_spoof_analysis["quality"] = quality_details
@@ -1389,6 +1675,8 @@ def analyze_liveness_frames(
         else 0
     )
     borderline_model_score = bool(
+        model_decision_enabled
+        and
         not is_mobile_capture
         and
         model_spoof_analysis.get("enabled")

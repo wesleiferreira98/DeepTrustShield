@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     liveness_anti_spoof_enabled: bool = True
     liveness_anti_spoof_threshold: float = 0.55
     liveness_onnx_antispoof_enabled: bool = True
+    liveness_onnx_antispoof_decision_enabled: bool = False
     liveness_onnx_antispoof_path: str = (
         f"{BASE_DIR}/model/weights/antispoof_mobilenet_v1_cv/fold_3/antispoof_mobilenet_v1.onnx"
     )
@@ -45,11 +46,11 @@ class Settings(BaseSettings):
         f"{BASE_DIR}/model/weights/antispoof_mobilenet_v1_cv/fold_3/antispoof_mobilenet_v1_metadata.json"
     )
     liveness_onnx_antispoof_aggregation: str = "p75"
-    liveness_onnx_antispoof_threshold: float = -1.0
-    liveness_onnx_antispoof_review_threshold: float = 0.095
-    liveness_onnx_antispoof_frame_spike_margin: float = 0.035
-    liveness_onnx_quality_override_threshold: float = 0.20
-    liveness_mobile_onnx_hard_threshold: float = 0.20
+    liveness_onnx_antispoof_threshold: float = 0.65
+    liveness_onnx_antispoof_review_threshold: float = 0.50
+    liveness_onnx_antispoof_frame_spike_margin: float = 0.12
+    liveness_onnx_quality_override_threshold: float = 0.75
+    liveness_mobile_onnx_hard_threshold: float = 0.75
     liveness_fusion_face_background_delta: float = 0.34
     liveness_fusion_internal_motion_max: float = 0.06
     liveness_onnx_min_face_width_ratio: float = 0.24

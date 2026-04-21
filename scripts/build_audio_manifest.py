@@ -49,9 +49,13 @@ def main():
             if not subset_root.exists():
                 continue
             for audio_path in collect_audio_files(subset_root):
+                relative_path = audio_path.relative_to(dataset_root)
                 rows.append(
                     {
                         "audio_path": str(audio_path),
+                        "relative_path": str(relative_path),
+                        "filename": audio_path.name,
+                        "extension": audio_path.suffix.lower(),
                         "split": split,
                         "label": label,
                         "source": audio_path.parent.name,
@@ -60,7 +64,18 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["audio_path", "split", "label", "source"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "audio_path",
+                "relative_path",
+                "filename",
+                "extension",
+                "split",
+                "label",
+                "source",
+            ],
+        )
         writer.writeheader()
         writer.writerows(rows)
 

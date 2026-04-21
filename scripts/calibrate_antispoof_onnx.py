@@ -172,6 +172,8 @@ def measure_image_quality(path: Path, cv2) -> dict | None:
         "glare_ratio": float(np.mean((value > 245) & (saturation < 45))),
         **calculate_frequency_features(gray, cv2),
         **calculate_skin_frequency_features(gray, cv2),
+        **calculate_lbp_features(gray, cv2),
+        **calculate_skin_lbp_features(gray, cv2),
     }
 
 
@@ -182,6 +184,10 @@ def calculate_frequency_features(gray_image: np.ndarray, cv2) -> dict[str, float
             "high_frequency_energy": 0.0,
             "horizontal_band_energy": 0.0,
             "vertical_band_energy": 0.0,
+            "isolated_peak_score": 0.0,
+            "frequency_grid_score": 0.0,
+            "frequency_directional_score": 0.0,
+            "frequency_ring_contrast": 0.0,
             "moire_score": 0.0,
         }
 
@@ -205,6 +211,10 @@ def calculate_frequency_features(gray_image: np.ndarray, cv2) -> dict[str, float
             "high_frequency_energy": 0.0,
             "horizontal_band_energy": 0.0,
             "vertical_band_energy": 0.0,
+            "isolated_peak_score": 0.0,
+            "frequency_grid_score": 0.0,
+            "frequency_directional_score": 0.0,
+            "frequency_ring_contrast": 0.0,
             "moire_score": 0.0,
         }
 
@@ -218,15 +228,42 @@ def calculate_frequency_features(gray_image: np.ndarray, cv2) -> dict[str, float
     vertical_values = magnitude[vertical_mask & high_mask]
     horizontal_band_energy = float(np.mean(horizontal_values) / (np.mean(high_values) + 1e-6)) if horizontal_values.size else 0.0
     vertical_band_energy = float(np.mean(vertical_values) / (np.mean(high_values) + 1e-6)) if vertical_values.size else 0.0
+
+    local_mean = cv2.blur(magnitude, (9, 9))
+    local_peak_map = magnitude / (local_mean + 1e-6)
+    isolated_peak_score = float(np.max(local_peak_map[high_mask])) if np.any(high_mask) else 0.0
+    mid_mask = (radius >= 12) & (radius < 30)
+    ring_mid = magnitude[mid_mask]
+    ring_high = magnitude[very_high_mask] if np.any(very_high_mask) else high_values
+    frequency_ring_contrast = float(np.mean(ring_high) / (np.mean(ring_mid) + 1e-6)) if ring_mid.size else 0.0
+    band_max = max(horizontal_band_energy, vertical_band_energy)
+    band_min = min(horizontal_band_energy, vertical_band_energy)
+    frequency_directional_score = float(max(0.0, band_max - band_min))
+    frequency_grid_score = float(min(horizontal_band_energy, vertical_band_energy))
+
     peak_component = min(1.0, max(0.0, (frequency_peak_score - 2.2) / 4.8))
     energy_component = min(1.0, max(0.0, (high_frequency_energy - 0.82) / 0.55))
     band_component = min(1.0, max(0.0, (max(horizontal_band_energy, vertical_band_energy) - 0.95) / 0.75))
+    isolated_peak_component = min(1.0, max(0.0, (isolated_peak_score - 1.28) / 1.20))
+    grid_component = min(1.0, max(0.0, (frequency_grid_score - 0.70) / 0.45))
+    ring_component = min(1.0, max(0.0, (frequency_ring_contrast - 0.82) / 0.40))
     return {
         "frequency_peak_score": frequency_peak_score,
         "high_frequency_energy": high_frequency_energy,
         "horizontal_band_energy": horizontal_band_energy,
         "vertical_band_energy": vertical_band_energy,
-        "moire_score": float(0.45 * peak_component + 0.35 * energy_component + 0.20 * band_component),
+        "isolated_peak_score": isolated_peak_score,
+        "frequency_grid_score": frequency_grid_score,
+        "frequency_directional_score": frequency_directional_score,
+        "frequency_ring_contrast": frequency_ring_contrast,
+        "moire_score": float(
+            0.30 * peak_component
+            + 0.20 * energy_component
+            + 0.15 * band_component
+            + 0.20 * isolated_peak_component
+            + 0.10 * grid_component
+            + 0.05 * ring_component
+        ),
     }
 
 
@@ -277,6 +314,68 @@ def calculate_skin_frequency_features(gray_image: np.ndarray, cv2) -> dict[str, 
         ),
         "skin_moire_score_median": float(np.median([item["moire_score"] for item in patch_features])),
         "skin_moire_score_max": float(np.max([item["moire_score"] for item in patch_features])),
+    }
+
+
+def calculate_lbp_features(gray_image: np.ndarray, cv2) -> dict[str, float]:
+    if gray_image is None or gray_image.size == 0:
+        return {
+            "lbp_entropy": 0.0,
+            "lbp_uniformity": 0.0,
+            "lbp_local_contrast": 0.0,
+        }
+
+    resized = cv2.resize(gray_image, (96, 96), interpolation=cv2.INTER_AREA).astype(np.float32)
+    center = resized[1:-1, 1:-1]
+    neighbors = [
+        resized[:-2, :-2],
+        resized[:-2, 1:-1],
+        resized[:-2, 2:],
+        resized[1:-1, 2:],
+        resized[2:, 2:],
+        resized[2:, 1:-1],
+        resized[2:, :-2],
+        resized[1:-1, :-2],
+    ]
+
+    lbp = np.zeros(center.shape, dtype=np.uint8)
+    contrast_acc = np.zeros(center.shape, dtype=np.float32)
+    for bit, neighbor in enumerate(neighbors):
+        lbp |= ((neighbor >= center).astype(np.uint8) << bit)
+        contrast_acc += np.abs(neighbor - center)
+
+    hist = np.bincount(lbp.ravel(), minlength=256).astype(np.float32)
+    hist_sum = float(np.sum(hist))
+    if hist_sum <= 0:
+        return {
+            "lbp_entropy": 0.0,
+            "lbp_uniformity": 0.0,
+            "lbp_local_contrast": 0.0,
+        }
+
+    probability = hist / hist_sum
+    non_zero = probability[probability > 0]
+    return {
+        "lbp_entropy": float(-np.sum(non_zero * np.log2(non_zero)) / 8.0),
+        "lbp_uniformity": float(np.sum(probability * probability)),
+        "lbp_local_contrast": float(np.mean(contrast_acc / 8.0) / 255.0),
+    }
+
+
+def calculate_skin_lbp_features(gray_image: np.ndarray, cv2) -> dict[str, float]:
+    patches = extract_skin_frequency_patches(gray_image)
+    if not patches:
+        return {
+            "skin_lbp_entropy": 0.0,
+            "skin_lbp_uniformity": 0.0,
+            "skin_lbp_local_contrast": 0.0,
+        }
+
+    patch_features = [calculate_lbp_features(patch, cv2) for patch in patches]
+    return {
+        "skin_lbp_entropy": float(np.median([item["lbp_entropy"] for item in patch_features])),
+        "skin_lbp_uniformity": float(np.median([item["lbp_uniformity"] for item in patch_features])),
+        "skin_lbp_local_contrast": float(np.median([item["lbp_local_contrast"] for item in patch_features])),
     }
 
 
@@ -444,12 +543,22 @@ def main() -> None:
                 "high_frequency_energy",
                 "horizontal_band_energy",
                 "vertical_band_energy",
+                "isolated_peak_score",
+                "frequency_grid_score",
+                "frequency_directional_score",
+                "frequency_ring_contrast",
                 "moire_score",
                 "skin_patch_count",
                 "skin_frequency_peak_score_median",
                 "skin_high_frequency_energy_median",
                 "skin_moire_score_median",
                 "skin_moire_score_max",
+                "lbp_entropy",
+                "lbp_uniformity",
+                "lbp_local_contrast",
+                "skin_lbp_entropy",
+                "skin_lbp_uniformity",
+                "skin_lbp_local_contrast",
             ]
         }
         rows.append(
