@@ -76,3 +76,4 @@ data/**/*.tar.gz
 data/calibration/liveness_captures/
 *.onnx.*
 *.onnx
+LA.zip
