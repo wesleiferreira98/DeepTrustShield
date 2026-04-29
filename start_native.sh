@@ -236,8 +236,8 @@ export DATABASE_URL="sqlite:///../detectar.db"
 export REDIS_URL="redis://localhost:6379/0"
 export ARTIFACTS_PATH="../artifacts"
 export MODEL_PATH="../model/weights"
-export AUDIO_MODEL_PATH="../model/weights/audio_deepfake_v1/audio_deepfake_v1_best.pth"
-export AUDIO_MODEL_SUMMARY_PATH="../model/weights/audio_deepfake_v1/summary.json"
+export AUDIO_MODEL_PATH="../model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth"
+export AUDIO_MODEL_SUMMARY_PATH="../model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json"
 
 rq worker deepfake --url redis://localhost:6379/0 --with-scheduler &
 WORKER_PID=$!

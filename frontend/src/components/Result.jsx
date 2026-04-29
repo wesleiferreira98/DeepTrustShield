@@ -87,12 +87,43 @@ function Result({
     .filter(([_, value]) => value)
     .map(([key]) => key);
 
+  const audioSymbolic = result.audio_summary?.symbolic || null;
+  const audioSegmentSummary = audioSymbolic?.segment_summary || result.audio_summary?.segment_summary || null;
+  const activeAudioFlags = Object.entries(audioSymbolic?.flags || {})
+    .filter(([_, value]) => value)
+    .map(([key]) => key);
+
   const flagLabels = {
     no_face: 'Nenhuma face detectada',
     multiple_faces: 'Multiplas faces detectadas',
     blur_high: 'Imagem borrada',
     low_light: 'Iluminacao inadequada',
     face_too_small: 'Face muito pequena',
+  };
+
+  const audioFlagLabels = {
+    short_audio: 'Audio curto',
+    very_short_audio: 'Audio muito curto',
+    high_silence: 'Muito silencio',
+    low_volume: 'Volume baixo',
+    clipped_audio: 'Audio saturado',
+    near_threshold: 'Score perto do limite',
+    strong_fake_score: 'Score fake forte',
+    strong_real_score: 'Score real forte',
+    low_confidence_fake: 'Fake com baixa margem',
+    feature_extraction_failed: 'Features incompletas',
+    partial_audio_analysis: 'Analise parcial',
+    segment_score_disagreement: 'Segmentos divergentes',
+    isolated_suspicious_segment: 'Suspeita localizada',
+    consistent_suspicious_segments: 'Suspeita consistente',
+    regional_bias_review: 'Revisao regional',
+    domain_mismatch_warning: 'Dominio fora do treino',
+  };
+
+  const confidenceLabels = {
+    low: 'Baixa',
+    moderate: 'Moderada',
+    high: 'Alta',
   };
 
   const sortedFrameResults = [...(result.frame_results || [])]
@@ -253,6 +284,30 @@ function Result({
                 <span className="meta-label">Decisao audio</span>
                 <span className="meta-value">{result.audio_summary.decision}</span>
               </div>
+              {audioSymbolic?.confidence && (
+                <div className="meta-item">
+                  <span className="meta-label">Confianca simbolica</span>
+                  <span className="meta-value">{confidenceLabels[audioSymbolic.confidence] || audioSymbolic.confidence}</span>
+                </div>
+              )}
+              {typeof audioSymbolic?.final_score === 'number' && (
+                <div className="meta-item">
+                  <span className="meta-label">Score final</span>
+                  <span className="meta-value">{(audioSymbolic.final_score * 100).toFixed(1)}%</span>
+                </div>
+              )}
+              {audioSegmentSummary?.count > 0 && (
+                <div className="meta-item">
+                  <span className="meta-label">Janelas analisadas</span>
+                  <span className="meta-value">{audioSegmentSummary.count}</span>
+                </div>
+              )}
+              {typeof audioSegmentSummary?.fake_ratio === 'number' && (
+                <div className="meta-item">
+                  <span className="meta-label">Janelas suspeitas</span>
+                  <span className="meta-value">{(audioSegmentSummary.fake_ratio * 100).toFixed(1)}%</span>
+                </div>
+              )}
               {result.audio_summary.audio_info?.duration_seconds && (
                 <div className="meta-item">
                   <span className="meta-label">Duracao</span>
@@ -262,6 +317,51 @@ function Result({
             </>
           )}
         </div>
+
+        {analysisMode === 'audio' && audioSymbolic && (
+          <div className="audio-symbolic-section">
+            <h3>Revisao simbolica</h3>
+            {activeAudioFlags.length > 0 && (
+              <div className="flags-list audio-flags-list">
+                {activeAudioFlags.map((flag) => (
+                  <span key={flag} className="flag-tag">
+                    {audioFlagLabels[flag] || flag}
+                  </span>
+                ))}
+              </div>
+            )}
+            {Array.isArray(audioSymbolic.explanations) && audioSymbolic.explanations.length > 0 && (
+              <ul className="audio-explanations">
+                {audioSymbolic.explanations.map((explanation) => (
+                  <li key={explanation}>{explanation}</li>
+                ))}
+              </ul>
+            )}
+            {audioSymbolic.regional_bias_review?.review_needed && (
+              <div className="regional-review-box">
+                <strong>Hipotese alternativa</strong>
+                <span>{audioSymbolic.regional_bias_review.note}</span>
+              </div>
+            )}
+            {audioSegmentSummary?.suspicious_segments?.length > 0 && (
+              <div className="audio-segments-list">
+                {audioSegmentSummary.suspicious_segments.slice(0, 4).map((segment) => (
+                  <div key={`${segment.index}-${segment.start}`} className="audio-segment-item">
+                    <span>{segment.start.toFixed(1)}s - {segment.end.toFixed(1)}s</span>
+                    <strong>{(segment.p_fake * 100).toFixed(1)}%</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {analysisMode === 'audio' && result.audio_summary && (
+          <details className="audio-debug-section">
+            <summary>Dados simbolicos retornados</summary>
+            <pre>{JSON.stringify(result.audio_summary, null, 2)}</pre>
+          </details>
+        )}
 
         {analysisMode === 'video' && livenessAnalysis && (
           <LivenessAnalysisCard livenessAnalysis={livenessAnalysis} />

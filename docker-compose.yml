@@ -44,6 +44,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - ARTIFACTS_PATH=/app/artifacts
       - MODEL_PATH=/app/model/weights
+      - AUDIO_MODEL_PATH=/app/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth
+      - AUDIO_MODEL_SUMMARY_PATH=/app/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json
     volumes:
       - artifacts_data:/app/artifacts
       - db_data:/app/data

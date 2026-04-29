@@ -36,8 +36,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument(
+        "--pos-weight",
+        default="auto",
+        help="Peso da classe fake no BCE. Use 'auto' para real/fake no treino ou um float.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num-workers", type=int, default=2)
+    parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
+    parser.add_argument("--amp", action="store_true", help="Usa mixed precision quando o device for CUDA.")
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--val-split", default="val")
     parser.add_argument("--test-split", default="test")
@@ -59,6 +66,16 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def resolve_device(device_name: str) -> torch.device:
+    if device_name == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("Device CUDA solicitado, mas torch.cuda.is_available() retornou False.")
+        return torch.device("cuda")
+    if device_name == "cpu":
+        return torch.device("cpu")
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def load_manifest(path: Path) -> list[dict]:
     rows: list[dict] = []
     with path.open("r", encoding="utf-8", newline="") as handle:
@@ -77,6 +94,8 @@ def load_manifest(path: Path) -> list[dict]:
                     "label": 0 if label_text == "real" else 1,
                     "label_text": label_text,
                     "source": row.get("source", ""),
+                    "accent": row.get("accent", "unknown") or "unknown",
+                    "speaker_id": row.get("speaker_id", "unknown") or "unknown",
                 }
             )
     return rows
@@ -167,6 +186,22 @@ def count_labels(rows: list[dict]) -> dict[str, int]:
     return {"real": counts.get("real", 0), "fake": counts.get("fake", 0)}
 
 
+def count_by_field(rows: list[dict], field: str) -> dict[str, int]:
+    counts = Counter((row.get(field) or "unknown") for row in rows)
+    return dict(sorted(counts.items()))
+
+
+def resolve_pos_weight(value: str, train_rows: list[dict]) -> float:
+    if value.strip().lower() != "auto":
+        return float(value)
+    labels = count_labels(train_rows)
+    real_count = labels["real"]
+    fake_count = labels["fake"]
+    if fake_count == 0:
+        return 1.0
+    return real_count / fake_count
+
+
 def metrics_from_probs(labels: list[int], probs: list[float], threshold: float = 0.5) -> dict[str, float]:
     if not labels:
         return {"auc": 0.0, "f1": 0.0, "acc": 0.0}
@@ -206,11 +241,56 @@ def find_best_threshold(
     return best
 
 
+def metrics_by_group(
+    rows: list[dict],
+    labels: list[int],
+    probs: list[float],
+    *,
+    group_field: str,
+    threshold: float,
+) -> dict[str, dict]:
+    grouped: dict[str, dict[str, list]] = {}
+    for row, label, prob in zip(rows, labels, probs):
+        group = row.get(group_field) or "unknown"
+        bucket = grouped.setdefault(group, {"labels": [], "probs": []})
+        bucket["labels"].append(label)
+        bucket["probs"].append(prob)
+
+    output = {}
+    for group, values in sorted(grouped.items()):
+        group_labels = values["labels"]
+        group_probs = values["probs"]
+        group_metrics = metrics_from_probs(group_labels, group_probs, threshold=threshold)
+        real_labels = [label for label in group_labels if label == 0]
+        fake_labels = [label for label in group_labels if label == 1]
+        false_positive_count = sum(
+            1
+            for label, prob in zip(group_labels, group_probs)
+            if label == 0 and prob >= threshold
+        )
+        false_negative_count = sum(
+            1
+            for label, prob in zip(group_labels, group_probs)
+            if label == 1 and prob < threshold
+        )
+        output[group] = {
+            **group_metrics,
+            "count": len(group_labels),
+            "real_count": len(real_labels),
+            "fake_count": len(fake_labels),
+            "false_positive_rate": false_positive_count / max(len(real_labels), 1),
+            "false_negative_rate": false_negative_count / max(len(fake_labels), 1),
+        }
+    return output
+
+
 def collect_predictions(
     model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    *,
+    use_amp: bool = False,
 ) -> dict[str, float | list[float] | list[int]]:
     model.eval()
     total_loss = 0.0
@@ -221,9 +301,10 @@ def collect_predictions(
         for features, labels in loader:
             features = features.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            logits = model(features)
-            loss = criterion(logits, labels)
-            probs = torch.sigmoid(logits)
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                logits = model(features)
+                loss = criterion(logits, labels)
+                probs = torch.sigmoid(logits)
 
             total_loss += loss.item() * labels.size(0)
             all_probs.extend(probs.detach().cpu().numpy().tolist())
@@ -238,8 +319,15 @@ def collect_predictions(
     }
 
 
-def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device: torch.device) -> dict[str, float]:
-    predictions = collect_predictions(model, loader, criterion, device)
+def evaluate(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+    *,
+    use_amp: bool = False,
+) -> dict[str, float]:
+    predictions = collect_predictions(model, loader, criterion, device, use_amp=use_amp)
     return {
         "loss": float(predictions["loss"]),
         "auc": float(predictions["auc"]),
@@ -254,6 +342,9 @@ def train_one_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    *,
+    use_amp: bool = False,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> dict[str, float]:
     model.train()
     total_loss = 0.0
@@ -265,10 +356,17 @@ def train_one_epoch(
         labels = labels.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
-        logits = model(features)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            logits = model(features)
+            loss = criterion(logits, labels)
+
+        if scaler is not None and use_amp:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         probs = torch.sigmoid(logits)
         total_loss += loss.item() * labels.size(0)
@@ -338,10 +436,13 @@ def main() -> None:
     if not train_rows or not val_rows:
         raise RuntimeError("Manifesto precisa ter pelo menos train e val com amostras real/fake.")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device(args.device)
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
     clip_seconds = float(args.clip_seconds)
     num_workers = args.num_workers if device.type == "cuda" else 0
     pin_memory = device.type == "cuda"
+    use_amp = bool(args.amp and device.type == "cuda")
 
     mel_transform = T.MelSpectrogram(
         sample_rate=args.sample_rate,
@@ -400,8 +501,11 @@ def main() -> None:
     )
 
     model = AudioCNN(args.n_mels).to(device)
-    criterion = nn.BCEWithLogitsLoss()
+    pos_weight_value = resolve_pos_weight(str(args.pos_weight), train_rows)
+    pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32, device=device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     history_rows: list[dict] = []
     best_val_auc = -1.0
@@ -412,14 +516,24 @@ def main() -> None:
     print(f"device = {device}")
     if device.type == "cuda":
         print(f"gpu = {torch.cuda.get_device_name(0)}")
+        print(f"amp = {use_amp}")
     print(f"manifest = {manifest_path}")
     print(f"train = {len(train_rows)} {count_labels(train_rows)}")
     print(f"val = {len(val_rows)} {count_labels(val_rows)}")
     print(f"test = {len(test_rows)} {count_labels(test_rows)}")
+    print(f"pos_weight = {pos_weight_value:.4f}")
 
     for epoch in range(1, args.epochs + 1):
-        train_metrics = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_metrics = evaluate(model, val_loader, criterion, device)
+        train_metrics = train_one_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            use_amp=use_amp,
+            scaler=scaler,
+        )
+        val_metrics = evaluate(model, val_loader, criterion, device, use_amp=use_amp)
 
         row = {
             "epoch": epoch,
@@ -462,26 +576,57 @@ def main() -> None:
         best_epoch = int(state.get("best_epoch", best_epoch))
         best_val_auc = float(state.get("best_val_auc", best_val_auc))
 
-    val_predictions = collect_predictions(model, val_loader, criterion, device)
+    val_predictions = collect_predictions(model, val_loader, criterion, device, use_amp=use_amp)
     threshold_calibration = find_best_threshold(
         val_predictions["labels"],
         val_predictions["probs"],
         metric="f1",
     )
-    test_metrics = evaluate(model, test_loader, criterion, device) if test_rows else None
+    calibrated_threshold = threshold_calibration["threshold"]
+    val_metrics_by_accent = metrics_by_group(
+        val_rows,
+        val_predictions["labels"],
+        val_predictions["probs"],
+        group_field="accent",
+        threshold=calibrated_threshold,
+    )
+    val_metrics_by_source = metrics_by_group(
+        val_rows,
+        val_predictions["labels"],
+        val_predictions["probs"],
+        group_field="source",
+        threshold=calibrated_threshold,
+    )
+    test_metrics = evaluate(model, test_loader, criterion, device, use_amp=use_amp) if test_rows else None
     test_metrics_calibrated = None
+    test_metrics_by_accent = None
+    test_metrics_by_source = None
     if test_rows:
-        test_predictions = collect_predictions(model, test_loader, criterion, device)
+        test_predictions = collect_predictions(model, test_loader, criterion, device, use_amp=use_amp)
         calibrated_metrics = metrics_from_probs(
             test_predictions["labels"],
             test_predictions["probs"],
-            threshold=threshold_calibration["threshold"],
+            threshold=calibrated_threshold,
         )
         test_metrics_calibrated = {
             "loss": float(test_predictions["loss"]),
             **calibrated_metrics,
-            "threshold": threshold_calibration["threshold"],
+            "threshold": calibrated_threshold,
         }
+        test_metrics_by_accent = metrics_by_group(
+            test_rows,
+            test_predictions["labels"],
+            test_predictions["probs"],
+            group_field="accent",
+            threshold=calibrated_threshold,
+        )
+        test_metrics_by_source = metrics_by_group(
+            test_rows,
+            test_predictions["labels"],
+            test_predictions["probs"],
+            group_field="source",
+            threshold=calibrated_threshold,
+        )
     elapsed_minutes = (time.time() - started_at) / 60.0
 
     history_path = output_dir / "history.csv"
@@ -502,21 +647,33 @@ def main() -> None:
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "learning_rate": args.learning_rate,
+        "pos_weight": pos_weight_value,
         "seed": args.seed,
         "device": str(device),
+        "amp": use_amp,
         "train_count": len(train_rows),
         "val_count": len(val_rows),
         "test_count": len(test_rows),
         "train_labels": count_labels(train_rows),
         "val_labels": count_labels(val_rows),
         "test_labels": count_labels(test_rows),
+        "train_accents": count_by_field(train_rows, "accent"),
+        "val_accents": count_by_field(val_rows, "accent"),
+        "test_accents": count_by_field(test_rows, "accent"),
+        "train_speakers": count_by_field(train_rows, "speaker_id"),
+        "val_speakers": count_by_field(val_rows, "speaker_id"),
+        "test_speakers": count_by_field(test_rows, "speaker_id"),
         "sample_audio_info": sample_audio_info(train_rows),
         "best_epoch": best_epoch,
         "best_val_auc": best_val_auc,
         "threshold_calibration": threshold_calibration,
+        "val_metrics_by_accent": val_metrics_by_accent,
+        "val_metrics_by_source": val_metrics_by_source,
         "elapsed_minutes": round(elapsed_minutes, 3),
         "test_metrics": test_metrics,
         "test_metrics_calibrated": test_metrics_calibrated,
+        "test_metrics_by_accent": test_metrics_by_accent,
+        "test_metrics_by_source": test_metrics_by_source,
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 

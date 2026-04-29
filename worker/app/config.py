@@ -15,11 +15,11 @@ class Config:
     MODEL_VERSION = os.getenv("MODEL_VERSION", "efficientnet-b0-v1")
     AUDIO_MODEL_PATH = os.getenv(
         "AUDIO_MODEL_PATH",
-        f"{BASE_DIR}/model/weights/audio_deepfake_v1/audio_deepfake_v1_best.pth",
+        f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth",
     )
     AUDIO_MODEL_SUMMARY_PATH = os.getenv(
         "AUDIO_MODEL_SUMMARY_PATH",
-        f"{BASE_DIR}/model/weights/audio_deepfake_v1/summary.json",
+        f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json",
     )
     
     # Thresholds

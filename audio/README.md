@@ -23,6 +23,82 @@ audio/
   notebooks/
 ```
 
+Os notebooks de audio devem ficar sempre em `audio/notebooks/`. A pasta
+`notebooks/` na raiz fica reservada para experimentos de imagem/face.
+
+## FakeBrAccent-D
+
+Base Kaggle:
+
+```text
+https://www.kaggle.com/datasets/katarinaveljovic/fake-braccent-d
+```
+
+Esta e a base prioritaria para a frente regional em portugues brasileiro. Ela
+deve ser usada para treinar o baseline BR e medir vies por sotaque.
+
+### Download
+
+O download via Kaggle requer o `kaggle.json` da sua conta.
+
+```bash
+pip install kaggle
+mkdir -p ~/.kaggle
+cp /caminho/para/kaggle.json ~/.kaggle/kaggle.json
+chmod 600 ~/.kaggle/kaggle.json
+
+kaggle datasets download \
+  -d katarinaveljovic/fake-braccent-d \
+  -p audio/data/raw/fake_braccent_d_download
+
+unzip audio/data/raw/fake_braccent_d_download/fake-braccent-d.zip \
+  -d audio/data/raw/fake_braccent_d
+```
+
+Se o arquivo ZIP for baixado manualmente pelo navegador, coloque-o em:
+
+```text
+audio/data/raw/fake_braccent_d_download/fake-braccent-d.zip
+```
+
+e rode apenas o `unzip`.
+
+### Manifesto com sotaque
+
+```bash
+python scripts/build_fake_braccent_manifest.py \
+  --dataset-root audio/data/raw/fake_braccent_d \
+  --output audio/data/manifests/fake_braccent_d_manifest.csv
+```
+
+O manifesto inclui:
+
+- `audio_path`
+- `relative_path`
+- `filename`
+- `extension`
+- `split`
+- `label`
+- `source`
+- `accent`
+
+### Treino
+
+```bash
+python scripts/train_audio_deepfake.py \
+  --manifest audio/data/manifests/fake_braccent_d_manifest.csv \
+  --output-dir audio/models/audio_deepfake_v1_fake_braccent_d \
+  --epochs 20 \
+  --batch-size 32
+```
+
+O `summary.json` do treino inclui metricas por sotaque:
+
+- `val_metrics_by_accent`
+- `test_metrics_by_accent`
+- `false_positive_rate`
+- `false_negative_rate`
+
 ## Caminho recomendado para ASVspoof 2019 LA sem lotar a maquina
 
 Se voce tiver a base oficial ja extraida, monte primeiro uma amostra pequena:

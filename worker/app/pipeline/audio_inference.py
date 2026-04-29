@@ -15,6 +15,7 @@ _audio_device = None
 _audio_model_version = None
 _audio_threshold = 0.5
 _audio_args = {}
+MAX_SEGMENTS = 32
 
 
 class AudioCNN(nn.Module):
@@ -139,18 +140,15 @@ def _pad_or_center_crop(waveform: torch.Tensor, num_samples: int) -> torch.Tenso
     return waveform
 
 
-def preprocess_audio_file(audio_path: str, sample_rate: int, clip_seconds: float, n_mels: int) -> tuple[torch.Tensor, dict]:
-    waveform, source_rate = torchaudio.load(audio_path)
-    if waveform.size(0) > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)
+def _pad_or_crop_from_start(waveform: torch.Tensor, start: int, num_samples: int) -> torch.Tensor:
+    end = start + num_samples
+    segment = waveform[:, start:min(end, waveform.size(-1))]
+    if segment.size(-1) < num_samples:
+        segment = torch.nn.functional.pad(segment, (0, num_samples - segment.size(-1)))
+    return segment
 
-    original_samples = int(waveform.size(-1))
-    if source_rate != sample_rate:
-        waveform = T.Resample(orig_freq=source_rate, new_freq=sample_rate)(waveform)
 
-    num_samples = int(sample_rate * clip_seconds)
-    waveform = _pad_or_center_crop(waveform, num_samples)
-
+def _features_from_waveform(waveform: torch.Tensor, sample_rate: int, n_mels: int) -> torch.Tensor:
     mel_transform = T.MelSpectrogram(
         sample_rate=sample_rate,
         n_fft=1024,
@@ -160,17 +158,109 @@ def preprocess_audio_file(audio_path: str, sample_rate: int, clip_seconds: float
     )
     amplitude_to_db = T.AmplitudeToDB()
     features = amplitude_to_db(mel_transform(waveform)).clamp(min=-80.0, max=0.0)
-    features = (features + 80.0) / 80.0
+    return (features + 80.0) / 80.0
+
+
+def _load_standard_waveform(audio_path: str, sample_rate: int) -> tuple[torch.Tensor, dict]:
+    waveform, source_rate = torchaudio.load(audio_path)
+    original_channels = int(waveform.size(0))
+    original_samples = int(waveform.size(-1))
+
+    if waveform.size(0) > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if source_rate != sample_rate:
+        waveform = T.Resample(orig_freq=source_rate, new_freq=sample_rate)(waveform)
 
     info = {
         "source_sample_rate": int(source_rate),
         "target_sample_rate": int(sample_rate),
+        "channels": original_channels,
         "original_samples": original_samples,
         "duration_seconds": original_samples / float(source_rate) if source_rate else None,
-        "clip_seconds": float(clip_seconds),
-        "n_mels": int(n_mels),
     }
+    return waveform, info
+
+
+def preprocess_audio_file(audio_path: str, sample_rate: int, clip_seconds: float, n_mels: int) -> tuple[torch.Tensor, dict]:
+    waveform, info = _load_standard_waveform(audio_path, sample_rate)
+    num_samples = int(sample_rate * clip_seconds)
+    waveform = _pad_or_center_crop(waveform, num_samples)
+    features = _features_from_waveform(waveform, sample_rate, n_mels)
+    info = {**info, "clip_seconds": float(clip_seconds), "n_mels": int(n_mels)}
     return features.unsqueeze(0), info
+
+
+def _segment_starts(total_samples: int, window_samples: int, stride_samples: int) -> list[int]:
+    if total_samples <= window_samples:
+        return [0]
+
+    starts = list(range(0, total_samples - window_samples + 1, stride_samples))
+    final_start = total_samples - window_samples
+    if starts[-1] != final_start:
+        starts.append(final_start)
+
+    if len(starts) <= MAX_SEGMENTS:
+        return starts
+
+    step = (len(starts) - 1) / float(MAX_SEGMENTS - 1)
+    sampled = [starts[round(index * step)] for index in range(MAX_SEGMENTS)]
+    return sorted(set(sampled))
+
+
+def run_audio_segment_inference(
+    model: nn.Module,
+    audio_path: str,
+    *,
+    sample_rate: int,
+    clip_seconds: float,
+    n_mels: int,
+    device: torch.device,
+) -> tuple[list[dict], dict]:
+    waveform, _ = _load_standard_waveform(audio_path, sample_rate)
+    total_samples = int(waveform.size(-1))
+    window_samples = int(sample_rate * clip_seconds)
+    stride_seconds = max(clip_seconds / 2.0, 1.0)
+    stride_samples = int(sample_rate * stride_seconds)
+    starts = _segment_starts(total_samples, window_samples, stride_samples)
+
+    features_batch = []
+    segment_meta = []
+    for index, start in enumerate(starts):
+        segment_waveform = _pad_or_crop_from_start(waveform, start, window_samples)
+        features_batch.append(_features_from_waveform(segment_waveform, sample_rate, n_mels))
+        segment_meta.append(
+            {
+                "index": index,
+                "start": start / float(sample_rate),
+                "end": min(start + window_samples, total_samples) / float(sample_rate),
+                "duration_seconds": min(window_samples, max(total_samples - start, 0)) / float(sample_rate),
+            }
+        )
+
+    if not features_batch:
+        return [], {"count": 0, "coverage_fraction": 0.0, "stride_seconds": stride_seconds}
+
+    batch = torch.stack(features_batch, dim=0).to(device)
+    with torch.no_grad():
+        probs = torch.sigmoid(model(batch)).detach().cpu().numpy().tolist()
+
+    segments = [
+        {
+            **meta,
+            "p_fake": float(prob),
+        }
+        for meta, prob in zip(segment_meta, probs)
+    ]
+    covered_until = max((segment["end"] for segment in segments), default=0.0)
+    duration_seconds = total_samples / float(sample_rate) if sample_rate else 0.0
+    summary = {
+        "count": len(segments),
+        "window_seconds": float(clip_seconds),
+        "stride_seconds": float(stride_seconds),
+        "coverage_fraction": min(1.0, covered_until / max(duration_seconds, 0.001)),
+        "max_segments": MAX_SEGMENTS,
+    }
+    return segments, summary
 
 
 def run_audio_inference(audio_path: str, model_path: str, summary_path: str | None = None) -> dict:
@@ -189,6 +279,15 @@ def run_audio_inference(audio_path: str, model_path: str, summary_path: str | No
         logits = model(features.to(device))
         p_fake = float(torch.sigmoid(logits).item())
 
+    segments, segment_summary = run_audio_segment_inference(
+        model,
+        audio_path,
+        sample_rate=args["sample_rate"],
+        clip_seconds=args["clip_seconds"],
+        n_mels=args["n_mels"],
+        device=device,
+    )
+
     threshold = get_audio_threshold()
     logger.info(
         "Audio inference result: p_fake = %.4f (threshold: %.4f, model: %s, file: %s)",
@@ -203,4 +302,6 @@ def run_audio_inference(audio_path: str, model_path: str, summary_path: str | No
         "threshold": threshold,
         "model_version": get_loaded_audio_model_version(),
         "audio_info": audio_info,
+        "segments": segments,
+        "segment_summary": segment_summary,
     }

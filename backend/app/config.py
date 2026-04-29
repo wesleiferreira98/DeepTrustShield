@@ -32,8 +32,12 @@ class Settings(BaseSettings):
     max_frame_upload_mb: int = 3
     max_total_frames_upload_mb: int = 24
     max_audio_upload_mb: int = 32
-    audio_model_path: str = f"{BASE_DIR}/model/weights/audio_deepfake_v1/audio_deepfake_v1_best.pth"
-    audio_model_summary_path: str = f"{BASE_DIR}/model/weights/audio_deepfake_v1/summary.json"
+    audio_model_path: str = (
+        f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth"
+    )
+    audio_model_summary_path: str = (
+        f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json"
+    )
 
     # Liveness challenge signing. Override in production with a long random value.
     liveness_session_secret: str = "dev-liveness-session-secret-change-me"

@@ -225,6 +225,106 @@
   margin-bottom: 10px;
 }
 
+.audio-symbolic-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.audio-symbolic-section h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.audio-flags-list {
+  margin-bottom: 12px;
+}
+
+.audio-explanations {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.audio-explanations li + li {
+  margin-top: 6px;
+}
+
+.audio-segments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.regional-review-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.regional-review-box strong {
+  color: var(--color-info);
+}
+
+.audio-segment-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 10px;
+  background: rgba(234, 179, 8, 0.06);
+  border: 1px solid rgba(234, 179, 8, 0.18);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.audio-segment-item strong {
+  color: var(--color-warning);
+}
+
+.audio-debug-section {
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.audio-debug-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.audio-debug-section pre {
+  max-height: 360px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .frames-list {
   display: flex;
   flex-direction: column;

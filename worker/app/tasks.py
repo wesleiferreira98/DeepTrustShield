@@ -16,6 +16,11 @@ from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
 from app.pipeline.inference import run_inference, get_loaded_model_version
 from app.pipeline.audio_inference import run_audio_inference
+from app.pipeline.audio_symbolic import (
+    combine_audio_decision,
+    evaluate_audio_symbolic_rules,
+    extract_audio_symbolic_features,
+)
 from app.db_models import Base, Job, Result, Artifact
 
 # Setup logging
@@ -146,13 +151,32 @@ def process_deepfake_audio(job_id: str, audio_path: str):
         update_stage(db, job_id, "calibrating_score")
         p_fake = audio_result["p_fake"]
         threshold = audio_result["threshold"]
-        risk_level = calculate_audio_risk_level(p_fake, threshold)
+        symbolic_features = extract_audio_symbolic_features(
+            audio_path,
+            {
+                **audio_result.get("audio_info", {}),
+                "segment_summary": audio_result.get("segment_summary", {}),
+            },
+        )
+        symbolic_rules = evaluate_audio_symbolic_rules(
+            audio_result,
+            symbolic_features,
+            audio_result.get("segments", []),
+        )
+        symbolic_decision = combine_audio_decision(audio_result, symbolic_rules)
+        risk_level = symbolic_decision["risk_level"]
 
         update_stage(db, job_id, "generating_evidence")
         audio_summary = {
             "threshold": threshold,
-            "decision": "fake" if p_fake >= threshold else "real",
+            "decision": symbolic_decision["decision"],
             "audio_info": audio_result.get("audio_info", {}),
+            "segment_summary": audio_result.get("segment_summary", {}),
+            "segments": audio_result.get("segments", []),
+            "symbolic": {
+                **symbolic_decision,
+                "features": symbolic_features,
+            },
         }
         save_artifact(db, job_id, original_meta=json.dumps({"audio_summary": audio_summary}))
         save_result(db, job_id, p_fake, risk_level, flags, model_version=audio_result["model_version"])
