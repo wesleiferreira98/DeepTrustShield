@@ -5,6 +5,8 @@ import torch
 import torchaudio
 import torchaudio.transforms as T
 
+from app.pipeline.audio_phonetic_knowledge import apply_phonetic_rules
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_THRESHOLDS = {
@@ -119,6 +121,10 @@ def _base_flags() -> dict:
         "consistent_suspicious_segments": False,
         "regional_bias_review": False,
         "domain_mismatch_warning": False,
+        "phonetic_layer_available": False,
+        "phonetic_coverage_insufficient": False,
+        "phonetic_consistency_support": False,
+        "phonetic_disruption_alert": False,
     }
 
 
@@ -317,6 +323,27 @@ def evaluate_audio_symbolic_rules(
         adjustments.append({"reason": "regional_bias_review", "delta": -0.20})
         symbolic_score -= 0.20
 
+    phonetic_review = apply_phonetic_rules(
+        neural_result.get("phonetic_events") or symbolic_features.get("phonetic_events") or [],
+        neural_result,
+    )
+    flags["phonetic_layer_available"] = bool(phonetic_review.get("available"))
+
+    phonetic_status = phonetic_review.get("status")
+    if phonetic_status == "insufficient_coverage":
+        flags["phonetic_coverage_insufficient"] = True
+    elif phonetic_status == "applied":
+        phonetic_adjustment = _safe_float(phonetic_review.get("adjustment"))
+        if phonetic_adjustment < 0:
+            flags["phonetic_consistency_support"] = True
+        elif phonetic_adjustment > 0:
+            flags["phonetic_disruption_alert"] = True
+
+        if phonetic_adjustment:
+            adjustments.append({"reason": "phonetic_symbolic_layer", "delta": phonetic_adjustment})
+            symbolic_score += phonetic_adjustment
+            explanations.extend(phonetic_review.get("explanations") or [])
+
     symbolic_score = max(0.0, min(1.0, symbolic_score))
     active_quality_flags = [
         flags["short_audio"],
@@ -331,8 +358,15 @@ def evaluate_audio_symbolic_rules(
 
     if flags["very_short_audio"] or (flags["high_silence"] and flags["low_volume"]):
         confidence = "low"
-    elif flags["near_threshold"] or flags["isolated_suspicious_segment"] or any(active_quality_flags):
+    elif (
+        flags["near_threshold"]
+        or flags["isolated_suspicious_segment"]
+        or flags["phonetic_coverage_insufficient"]
+        or any(active_quality_flags)
+    ):
         confidence = "moderate"
+    elif flags["phonetic_disruption_alert"]:
+        confidence = "high"
     elif flags["consistent_suspicious_segments"] and (flags["strong_fake_score"] or p_fake >= threshold):
         confidence = "high"
     elif flags["strong_fake_score"] or flags["strong_real_score"]:
@@ -351,6 +385,7 @@ def evaluate_audio_symbolic_rules(
         "adjustments": adjustments,
         "segment_summary": segment_summary,
         "regional_bias_review": regional_bias_review,
+        "phonetic_review": phonetic_review,
         "thresholds": thresholds,
     }
 
@@ -403,4 +438,5 @@ def combine_audio_decision(neural_result: dict, symbolic_result: dict) -> dict:
         "adjustments": symbolic_result.get("adjustments", []),
         "segment_summary": segment_summary,
         "regional_bias_review": symbolic_result.get("regional_bias_review", {}),
+        "phonetic_review": symbolic_result.get("phonetic_review", {}),
     }

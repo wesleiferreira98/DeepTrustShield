@@ -16,6 +16,7 @@ from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
 from app.pipeline.inference import run_inference, get_loaded_model_version
 from app.pipeline.audio_inference import run_audio_inference
+from app.pipeline.audio_phonetic_events import extract_phonetic_events
 from app.pipeline.audio_symbolic import (
     combine_audio_decision,
     evaluate_audio_symbolic_rules,
@@ -158,6 +159,12 @@ def process_deepfake_audio(job_id: str, audio_path: str):
                 "segment_summary": audio_result.get("segment_summary", {}),
             },
         )
+        phonetic_extraction = extract_phonetic_events(
+            audio_path,
+            audio_info=audio_result.get("audio_info", {}),
+            segments=audio_result.get("segments", []),
+        )
+        audio_result["phonetic_events"] = phonetic_extraction.get("events", [])
         symbolic_rules = evaluate_audio_symbolic_rules(
             audio_result,
             symbolic_features,
@@ -173,6 +180,12 @@ def process_deepfake_audio(job_id: str, audio_path: str):
             "audio_info": audio_result.get("audio_info", {}),
             "segment_summary": audio_result.get("segment_summary", {}),
             "segments": audio_result.get("segments", []),
+            "phonetic_event_extraction": {
+                key: value
+                for key, value in phonetic_extraction.items()
+                if key != "events"
+            },
+            "phonetic_events": phonetic_extraction.get("events", [])[:32],
             "symbolic": {
                 **symbolic_decision,
                 "features": symbolic_features,

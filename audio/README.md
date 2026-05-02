@@ -99,6 +99,63 @@ O `summary.json` do treino inclui metricas por sotaque:
 - `false_positive_rate`
 - `false_negative_rate`
 
+## Sidecars de transcricao para a camada fonetico-fonologica
+
+A camada neuro-simbolica fonetico-fonologica le arquivos auxiliares ao lado do
+audio para extrair candidatos de eventos linguistico-foneticos. O caminho mais
+seguro para pesquisa e gerar esses arquivos offline com `faster-whisper`.
+
+Instale as dependencias de pesquisa:
+
+```bash
+.venv/bin/pip install -r requirements-training.txt
+```
+
+Para transcrever um unico audio:
+
+```bash
+.venv/bin/python scripts/build_audio_transcript_sidecars.py \
+  --input caminho/para/audio.ogg \
+  --model small \
+  --device cuda \
+  --compute-type float16 \
+  --language pt
+```
+
+Para transcrever uma pasta:
+
+```bash
+.venv/bin/python scripts/build_audio_transcript_sidecars.py \
+  --input audio/data/eval_external \
+  --recursive \
+  --model small \
+  --device cuda \
+  --compute-type float16 \
+  --language pt
+```
+
+Para transcrever os audios de um manifesto:
+
+```bash
+.venv/bin/python scripts/build_audio_transcript_sidecars.py \
+  --manifest audio/data/manifests/fake_braccent_d_codec_equalized_manifest.csv \
+  --model small \
+  --device cuda \
+  --compute-type float16 \
+  --language pt
+```
+
+Cada audio gera um sidecar:
+
+```text
+audio.transcript.json
+```
+
+Esse arquivo inclui texto, palavras com tempo aproximado, segmentos do ASR e
+metadados do modelo. O worker ja consegue ler esse sidecar e gerar candidatos
+para a camada simbolica. Sem sidecar, a analise segue normalmente, mas a parte
+fonetico-fonologica retorna cobertura insuficiente.
+
 ## Caminho recomendado para ASVspoof 2019 LA sem lotar a maquina
 
 Se voce tiver a base oficial ja extraida, monte primeiro uma amostra pequena:

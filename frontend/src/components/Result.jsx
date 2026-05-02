@@ -118,6 +118,10 @@ function Result({
     consistent_suspicious_segments: 'Suspeita consistente',
     regional_bias_review: 'Revisao regional',
     domain_mismatch_warning: 'Dominio fora do treino',
+    phonetic_layer_available: 'Base fonetica carregada',
+    phonetic_coverage_insufficient: 'Cobertura fonetica baixa',
+    phonetic_consistency_support: 'Consistencia fonetica',
+    phonetic_disruption_alert: 'Ruptura fonetica',
   };
 
   const confidenceLabels = {
@@ -341,6 +345,16 @@ function Result({
               <div className="regional-review-box">
                 <strong>Hipotese alternativa</strong>
                 <span>{audioSymbolic.regional_bias_review.note}</span>
+              </div>
+            )}
+            {audioSymbolic.phonetic_review && (
+              <div className="regional-review-box">
+                <strong>Camada fonetico-fonologica</strong>
+                <span>
+                  {audioSymbolic.phonetic_review.status === 'insufficient_coverage'
+                    ? 'Base simbolica carregada, mas ainda sem eventos foneticos suficientes para calibracao linguistica.'
+                    : `Status: ${audioSymbolic.phonetic_review.status || 'indisponivel'}`}
+                </span>
               </div>
             )}
             {audioSegmentSummary?.suspicious_segments?.length > 0 && (
