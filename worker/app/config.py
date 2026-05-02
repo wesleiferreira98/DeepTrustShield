@@ -33,6 +33,7 @@ class Config:
     AUDIO_ASR_COMPUTE_TYPE = os.getenv("AUDIO_ASR_COMPUTE_TYPE", "default")
     AUDIO_ASR_BEAM_SIZE = int(os.getenv("AUDIO_ASR_BEAM_SIZE", "5"))
     AUDIO_ASR_VAD_FILTER = os.getenv("AUDIO_ASR_VAD_FILTER", "false").lower() in {"1", "true", "yes", "on"}
+    AUDIO_ASR_PREPROCESS_ENABLED = os.getenv("AUDIO_ASR_PREPROCESS_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
     
     # Quality checks
     MIN_FACE_SIZE = 80  # pixels

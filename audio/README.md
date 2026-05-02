@@ -145,6 +145,14 @@ Para transcrever os audios de um manifesto:
   --language pt
 ```
 
+Por padrao, o script aplica um pre-tratamento leve somente para o ASR: mono,
+16 kHz, remocao de DC, filtro passa-altas suave, reducao conservadora de ruido
+estacionario, corte apenas de silencio nas bordas e normalizacao leve de volume.
+Quando esse modo esta ativo e `--output-suffix` nao e informado, o sidecar e
+salvo como `.preprocessed.transcript.json`. Para comparar com o audio bruto,
+use `--no-preprocess-asr-audio`; nesse caso o sidecar padrao continua sendo
+`.transcript.json`.
+
 Cada audio gera um sidecar:
 
 ```text
@@ -169,10 +177,13 @@ AUDIO_ASR_MODEL=medium
 AUDIO_ASR_LANGUAGE=pt
 AUDIO_ASR_DEVICE=auto
 AUDIO_ASR_COMPUTE_TYPE=default
+AUDIO_ASR_PREPROCESS_ENABLED=true
 ```
 
 Quando ativado, o resultado de áudio inclui uma seção `transcript` e o front
 mostra a transcrição automática de forma formatada antes da revisão simbólica.
+O pré-tratamento de ASR é aplicado apenas à entrada temporária do Whisper; o
+detector neural e as heurísticas fonéticas continuam usando o áudio original.
 
 Se `faster-whisper` não estiver instalado ou o ASR falhar, a análise neural
 continua funcionando; apenas a camada fonético-fonológica fica sem cobertura.

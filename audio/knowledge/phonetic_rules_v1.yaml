@@ -30,6 +30,9 @@ thresholds:
   neural_high_margin: 0.10
   neural_peak_margin: 0.08
   disruption_window_seconds: 6.0
+  localized_disruption_min_pairs: 2
+  aligned_disruption_min_pairs: 2
+  multi_phenomena_disruption_min_phenomena: 2
 
 phenomena:
   rotic_coda:

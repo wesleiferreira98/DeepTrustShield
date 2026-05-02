@@ -90,6 +90,61 @@ function Result({
   const audioSymbolic = result.audio_summary?.symbolic || null;
   const audioSegmentSummary = audioSymbolic?.segment_summary || result.audio_summary?.segment_summary || null;
   const audioTranscript = result.audio_summary?.transcript || null;
+  const audioSegments = Array.isArray(result.audio_summary?.segments) ? result.audio_summary.segments : [];
+  const audioPhoneticEvents = Array.isArray(result.audio_summary?.phonetic_events)
+    ? result.audio_summary.phonetic_events
+    : [];
+  const audioTimeline = useMemo(() => {
+    if (!audioSegments.length) {
+      return null;
+    }
+
+    const duration = result.audio_summary?.audio_info?.duration_seconds
+      || Math.max(...audioSegments.map((segment) => Number(segment.end) || 0));
+    const threshold = typeof result.audio_summary?.threshold === 'number'
+      ? result.audio_summary.threshold
+      : 0.5;
+    const width = 720;
+    const height = 220;
+    const padding = { top: 18, right: 22, bottom: 58, left: 38 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    const xForTime = (time) => padding.left + ((Math.max(0, Math.min(duration, time)) / Math.max(duration, 0.001)) * plotWidth);
+    const yForScore = (score) => padding.top + ((1 - Math.max(0, Math.min(1, score))) * plotHeight);
+    const points = audioSegments
+      .map((segment) => {
+        const mid = ((Number(segment.start) || 0) + (Number(segment.end) || 0)) / 2;
+        return `${xForTime(mid).toFixed(2)},${yForScore(Number(segment.p_fake) || 0).toFixed(2)}`;
+      })
+      .join(' ');
+    const suspiciousSegments = audioSegments.filter((segment) => (Number(segment.p_fake) || 0) >= threshold);
+    const reliableEvents = audioPhoneticEvents.filter((event) => (
+      event.event_quality === 'strong' || event.event_quality === 'moderate'
+    ));
+    const eventCounts = reliableEvents.reduce((acc, event) => {
+      const key = event.phenomenon || 'outro';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      width,
+      height,
+      padding,
+      plotWidth,
+      plotHeight,
+      duration,
+      threshold,
+      points,
+      xForTime,
+      yForScore,
+      suspiciousSegments,
+      reliableEvents,
+      eventCounts,
+      maxScore: Math.max(...audioSegments.map((segment) => Number(segment.p_fake) || 0)),
+      minScore: Math.min(...audioSegments.map((segment) => Number(segment.p_fake) || 0)),
+    };
+  }, [audioSegments, audioPhoneticEvents, result.audio_summary]);
   const activeAudioFlags = Object.entries(audioSymbolic?.flags || {})
     .filter(([_, value]) => value)
     .map(([key]) => key);
@@ -132,6 +187,68 @@ function Result({
     moderate: 'Moderada',
     high: 'Alta',
   };
+
+  const eventLabels = {
+    rotic_coda: '/r/ final',
+    s_coda: '/s/ coda',
+    td_before_i: '/t,d/ + i',
+  };
+  const audioVisualSummary = useMemo(() => {
+    const phoneticReview = audioSymbolic?.phonetic_review || null;
+    const eventSummary = result.audio_summary?.phonetic_event_extraction?.event_summary || null;
+    const threshold = typeof result.audio_summary?.threshold === 'number'
+      ? result.audio_summary.threshold
+      : null;
+
+    const metrics = phoneticReview ? [
+      {
+        label: 'Cobertura fonetica',
+        value: Number(phoneticReview.coverage_score) || 0,
+      },
+      {
+        label: 'Qualidade da evidencia',
+        value: Number(phoneticReview.evidence_quality?.quality_score) || 0,
+      },
+      {
+        label: 'Consistencia',
+        value: Number(phoneticReview.phonetic_consistency_score) || 0,
+      },
+      {
+        label: 'Ruptura localizada',
+        value: Number(phoneticReview.localized_disruption_score) || 0,
+        inverted: true,
+      },
+      {
+        label: 'Alinhamento com pico',
+        value: Number(phoneticReview.alignment_score) || 0,
+      },
+    ] : [];
+
+    const scoreRows = [
+      { label: 'Neural', value: Number(audioSymbolic?.neural_score), type: 'neural' },
+      { label: 'Simbolico', value: Number(audioSymbolic?.symbolic_score), type: 'symbolic' },
+      { label: 'Final', value: Number(audioSymbolic?.final_score), type: 'final' },
+    ].filter((item) => Number.isFinite(item.value));
+
+    const phenomenonCounts = eventSummary?.candidate_by_phenomenon || {};
+    const classifiedCounts = eventSummary?.classified_by_variant || {};
+    const maxPhenomenonCount = Math.max(1, ...Object.values(phenomenonCounts).map((value) => Number(value) || 0));
+    const maxClassifiedCount = Math.max(1, ...Object.values(classifiedCounts).map((value) => Number(value) || 0));
+    const rules = Array.isArray(phoneticReview?.activated_rules) ? phoneticReview.activated_rules : [];
+
+    return {
+      phoneticReview,
+      eventSummary,
+      threshold,
+      metrics,
+      scoreRows,
+      phenomenonCounts,
+      classifiedCounts,
+      maxPhenomenonCount,
+      maxClassifiedCount,
+      rules,
+    };
+  }, [audioSymbolic, result.audio_summary]);
 
   const sortedFrameResults = [...(result.frame_results || [])]
     .sort((a, b) => a.index - b.index)
@@ -329,6 +446,288 @@ function Result({
           <div className="audio-executive-summary">
             <h3>{result.audio_summary.executive_summary.title}</h3>
             <p>{result.audio_summary.executive_summary.summary}</p>
+          </div>
+        )}
+
+        {analysisMode === 'audio' && audioTimeline && (
+          <div className="audio-timeline-section">
+            <div className="audio-timeline-header">
+              <div>
+                <h3>Linha do tempo da analise</h3>
+                <span>
+                  {audioTimeline.suspiciousSegments.length} janela(s) acima do limite · {audioTimeline.reliableEvents.length} evento(s) fonetico(s) confiavel(is)
+                </span>
+              </div>
+              <div className="audio-timeline-score-range">
+                {(audioTimeline.minScore * 100).toFixed(1)}% - {(audioTimeline.maxScore * 100).toFixed(1)}%
+              </div>
+            </div>
+
+            <svg
+              className="audio-timeline-chart"
+              viewBox={`0 0 ${audioTimeline.width} ${audioTimeline.height}`}
+              role="img"
+              aria-label="Grafico dos scores por janela de audio"
+            >
+              <line
+                x1={audioTimeline.padding.left}
+                y1={audioTimeline.yForScore(1)}
+                x2={audioTimeline.padding.left + audioTimeline.plotWidth}
+                y2={audioTimeline.yForScore(1)}
+                className="audio-chart-grid"
+              />
+              <line
+                x1={audioTimeline.padding.left}
+                y1={audioTimeline.yForScore(0.5)}
+                x2={audioTimeline.padding.left + audioTimeline.plotWidth}
+                y2={audioTimeline.yForScore(0.5)}
+                className="audio-chart-grid"
+              />
+              <line
+                x1={audioTimeline.padding.left}
+                y1={audioTimeline.yForScore(0)}
+                x2={audioTimeline.padding.left + audioTimeline.plotWidth}
+                y2={audioTimeline.yForScore(0)}
+                className="audio-chart-axis"
+              />
+              <line
+                x1={audioTimeline.padding.left}
+                y1={audioTimeline.yForScore(audioTimeline.threshold)}
+                x2={audioTimeline.padding.left + audioTimeline.plotWidth}
+                y2={audioTimeline.yForScore(audioTimeline.threshold)}
+                className="audio-chart-threshold"
+              />
+              <text
+                x={audioTimeline.padding.left + audioTimeline.plotWidth - 4}
+                y={audioTimeline.yForScore(audioTimeline.threshold) - 6}
+                className="audio-chart-threshold-label"
+                textAnchor="end"
+              >
+                limite {(audioTimeline.threshold * 100).toFixed(1)}%
+              </text>
+
+              {audioTimeline.suspiciousSegments.map((segment) => {
+                const x = audioTimeline.xForTime(Number(segment.start) || 0);
+                const endX = audioTimeline.xForTime(Number(segment.end) || 0);
+                return (
+                  <rect
+                    key={`sus-${segment.index}-${segment.start}`}
+                    x={x}
+                    y={audioTimeline.padding.top}
+                    width={Math.max(2, endX - x)}
+                    height={audioTimeline.plotHeight}
+                    className="audio-chart-suspicious-band"
+                  >
+                    <title>
+                      {`${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s · ${((Number(segment.p_fake) || 0) * 100).toFixed(1)}%`}
+                    </title>
+                  </rect>
+                );
+              })}
+
+              <polyline className="audio-chart-line" points={audioTimeline.points} />
+
+              {audioSegments.map((segment) => {
+                const mid = ((Number(segment.start) || 0) + (Number(segment.end) || 0)) / 2;
+                const score = Number(segment.p_fake) || 0;
+                return (
+                  <circle
+                    key={`pt-${segment.index}-${segment.start}`}
+                    cx={audioTimeline.xForTime(mid)}
+                    cy={audioTimeline.yForScore(score)}
+                    r={score >= audioTimeline.threshold ? 4.5 : 3}
+                    className={score >= audioTimeline.threshold ? 'audio-chart-point suspicious' : 'audio-chart-point'}
+                  >
+                    <title>
+                      {`Janela ${segment.index}: ${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s · ${(score * 100).toFixed(1)}%`}
+                    </title>
+                  </circle>
+                );
+              })}
+
+              {audioTimeline.reliableEvents.slice(0, 48).map((event, index) => {
+                const startTime = Number(event.start_time) || 0;
+                const phenomenon = event.phenomenon || 'other';
+                const x = audioTimeline.xForTime(startTime);
+                const y = audioTimeline.padding.top + audioTimeline.plotHeight + 18 + ((index % 3) * 10);
+                return (
+                  <g key={`${event.event_id}-${index}`}>
+                    <line
+                      x1={x}
+                      y1={audioTimeline.padding.top + audioTimeline.plotHeight + 4}
+                      x2={x}
+                      y2={y}
+                      className={`audio-event-marker ${phenomenon}`}
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={3.5}
+                      className={`audio-event-dot ${phenomenon}`}
+                    >
+                      <title>
+                        {`${eventLabels[phenomenon] || phenomenon}: ${event.word || ''} · ${event.variant || 'unknown'} · ${((Number(event.confidence) || 0) * 100).toFixed(1)}%`}
+                      </title>
+                    </circle>
+                  </g>
+                );
+              })}
+
+              <text x={audioTimeline.padding.left} y={audioTimeline.height - 8} className="audio-chart-time-label">0s</text>
+              <text
+                x={audioTimeline.padding.left + audioTimeline.plotWidth}
+                y={audioTimeline.height - 8}
+                className="audio-chart-time-label"
+                textAnchor="end"
+              >
+                {audioTimeline.duration.toFixed(1)}s
+              </text>
+            </svg>
+
+            <div className="audio-timeline-legend">
+              <span><i className="legend-line" />Score neural</span>
+              <span><i className="legend-band" />Acima do limite</span>
+              <span><i className="legend-dot rotic_coda" />/r/ final {audioTimeline.eventCounts.rotic_coda || 0}</span>
+              <span><i className="legend-dot s_coda" />/s/ coda {audioTimeline.eventCounts.s_coda || 0}</span>
+              <span><i className="legend-dot td_before_i" />/t,d/ + i {audioTimeline.eventCounts.td_before_i || 0}</span>
+            </div>
+          </div>
+        )}
+
+        {analysisMode === 'audio' && result.audio_summary && (
+          <div className="audio-visual-dashboard">
+            {audioVisualSummary.metrics.length > 0 && (
+              <div className="audio-metric-grid">
+                {audioVisualSummary.metrics.map((metric) => (
+                  <div key={metric.label} className="audio-metric-card">
+                    <div className="audio-metric-topline">
+                      <span>{metric.label}</span>
+                      <strong>{(metric.value * 100).toFixed(0)}%</strong>
+                    </div>
+                    <div className="audio-mini-bar">
+                      <div
+                        className={metric.inverted ? 'audio-mini-fill inverted' : 'audio-mini-fill'}
+                        style={{ width: `${Math.max(0, Math.min(1, metric.value)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {audioSegments.length > 0 && (
+              <div className="audio-heatmap-box">
+                <div className="audio-visual-title-row">
+                  <h3>Mapa de janelas</h3>
+                  <span>{audioSegments.length} janelas</span>
+                </div>
+                <div className="audio-window-heatmap" aria-label="Mapa dos scores por janela">
+                  {audioSegments.map((segment) => {
+                    const score = Number(segment.p_fake) || 0;
+                    const threshold = audioVisualSummary.threshold ?? 0.5;
+                    const heatClass = score >= threshold
+                      ? 'critical'
+                      : score >= Math.max(0, threshold - 0.08)
+                        ? 'near'
+                        : score >= 0.70
+                          ? 'warm'
+                          : 'cool';
+                    return (
+                      <span
+                        key={`heat-${segment.index}-${segment.start}`}
+                        className={`audio-window-cell ${heatClass}`}
+                        title={`Janela ${segment.index}: ${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s · ${(score * 100).toFixed(1)}%`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {audioVisualSummary.scoreRows.length > 0 && (
+              <div className="audio-score-ladder">
+                <div className="audio-visual-title-row">
+                  <h3>Neural → Simbolico → Final</h3>
+                  {typeof audioVisualSummary.threshold === 'number' && (
+                    <span>Limite {(audioVisualSummary.threshold * 100).toFixed(1)}%</span>
+                  )}
+                </div>
+                {audioVisualSummary.scoreRows.map((row) => (
+                  <div key={row.label} className="audio-score-row">
+                    <span>{row.label}</span>
+                    <div className="audio-score-track">
+                      {typeof audioVisualSummary.threshold === 'number' && (
+                        <i style={{ left: `${audioVisualSummary.threshold * 100}%` }} />
+                      )}
+                      <b
+                        className={`audio-score-fill ${row.type}`}
+                        style={{ width: `${Math.max(0, Math.min(1, row.value)) * 100}%` }}
+                      />
+                    </div>
+                    <strong>{(row.value * 100).toFixed(1)}%</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {audioVisualSummary.eventSummary && (
+              <div className="audio-events-visual">
+                <div className="audio-visual-title-row">
+                  <h3>Eventos foneticos</h3>
+                  <span>
+                    {audioVisualSummary.eventSummary.reliable_event_count || 0} confiaveis de {audioVisualSummary.eventSummary.candidate_count || 0}
+                  </span>
+                </div>
+                <div className="audio-event-bars">
+                  {Object.entries(audioVisualSummary.phenomenonCounts).map(([key, count]) => (
+                    <div key={key} className="audio-event-bar-row">
+                      <span>{eventLabels[key] || key}</span>
+                      <div>
+                        <b style={{ width: `${((Number(count) || 0) / audioVisualSummary.maxPhenomenonCount) * 100}%` }} />
+                      </div>
+                      <strong>{count}</strong>
+                    </div>
+                  ))}
+                </div>
+                {Object.keys(audioVisualSummary.classifiedCounts).length > 0 && (
+                  <div className="audio-variant-bars">
+                    {Object.entries(audioVisualSummary.classifiedCounts).slice(0, 6).map(([key, count]) => (
+                      <div key={key} className="audio-variant-row">
+                        <span>{key.replace('.', ' · ')}</span>
+                        <div>
+                          <b style={{ width: `${((Number(count) || 0) / audioVisualSummary.maxClassifiedCount) * 100}%` }} />
+                        </div>
+                        <strong>{count}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {audioVisualSummary.rules.length > 0 && (
+              <div className="audio-rules-panel">
+                <div className="audio-visual-title-row">
+                  <h3>Regras ativadas</h3>
+                  <span>{audioVisualSummary.rules.length} regra(s)</span>
+                </div>
+                <div className="audio-rule-list">
+                  {audioVisualSummary.rules.map((rule) => {
+                    const weight = Number(rule.weight) || 0;
+                    const polarity = weight < 0 ? 'reduce' : weight > 0 ? 'increase' : 'neutral';
+                    return (
+                      <div key={`${rule.rule_id}-${rule.condition}`} className={`audio-rule-card ${polarity}`}>
+                        <div>
+                          <strong>{rule.rule_id}</strong>
+                          <span>{rule.condition}</span>
+                        </div>
+                        <b>{weight > 0 ? '+' : ''}{weight.toFixed(2)}</b>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

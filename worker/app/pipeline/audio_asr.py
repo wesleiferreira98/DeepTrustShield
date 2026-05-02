@@ -3,11 +3,19 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import torch
+import torchaudio
+import torchaudio.functional as AF
+import torchaudio.transforms as T
+
 logger = logging.getLogger(__name__)
+ASR_SAMPLE_RATE = 16000
+ASR_TARGET_RMS = 0.08
 
 
 def _file_sha256(path: Path) -> str:
@@ -50,6 +58,160 @@ def _flatten_words(segments: list[dict]) -> list[dict]:
         if segment.get("words"):
             words.extend(segment["words"])
     return words
+
+
+def _rms(waveform: torch.Tensor) -> float:
+    if waveform.numel() == 0:
+        return 0.0
+    return float(torch.sqrt(torch.mean(waveform.float().pow(2))).item())
+
+
+def _light_stationary_noise_reduction(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
+    """Apply a conservative spectral subtraction pass for ASR only."""
+    if waveform.numel() < sample_rate:
+        return waveform
+
+    frame_size = 512
+    hop_size = 160
+    if waveform.numel() < frame_size * 2:
+        return waveform
+
+    window = torch.hann_window(frame_size, device=waveform.device)
+    stft = torch.stft(
+        waveform.float(),
+        n_fft=frame_size,
+        hop_length=hop_size,
+        win_length=frame_size,
+        window=window,
+        return_complex=True,
+    )
+    magnitude = stft.abs()
+    frame_energy = magnitude.mean(dim=0)
+    if frame_energy.numel() < 4 or frame_energy.max().item() <= 1e-8:
+        return waveform
+
+    quiet_count = max(3, int(frame_energy.numel() * 0.12))
+    quiet_indices = torch.argsort(frame_energy)[:quiet_count]
+    noise_profile = magnitude[:, quiet_indices].median(dim=1).values.unsqueeze(1)
+
+    reduction_strength = 0.35
+    spectral_floor = 0.08
+    cleaned_magnitude = torch.clamp(
+        magnitude - (noise_profile * reduction_strength),
+        min=magnitude * spectral_floor,
+    )
+    phase = stft / torch.clamp(magnitude, min=1e-8)
+    cleaned = torch.istft(
+        cleaned_magnitude * phase,
+        n_fft=frame_size,
+        hop_length=hop_size,
+        win_length=frame_size,
+        window=window,
+        length=waveform.numel(),
+    )
+    return (0.85 * cleaned) + (0.15 * waveform.float())
+
+
+def _trim_edge_silence(waveform: torch.Tensor, sample_rate: int) -> tuple[torch.Tensor, dict]:
+    """Trim only leading/trailing low-energy regions; internal pauses are preserved."""
+    frame_size = int(sample_rate * 0.03)
+    hop_size = int(sample_rate * 0.01)
+    if waveform.numel() < frame_size * 4:
+        return waveform, {"trimmed": False, "trim_start_seconds": 0.0, "trim_end_seconds": 0.0}
+
+    frames = waveform.unfold(0, frame_size, hop_size)
+    frame_rms = torch.sqrt(torch.mean(frames.float().pow(2), dim=1))
+    global_rms = _rms(waveform)
+    threshold = max(0.003, global_rms * 0.18)
+    active = frame_rms > threshold
+    if not active.any():
+        return waveform, {"trimmed": False, "trim_start_seconds": 0.0, "trim_end_seconds": 0.0}
+
+    active_indices = torch.nonzero(active, as_tuple=False).flatten()
+    margin = int(sample_rate * 0.25)
+    start_sample = max(0, int(active_indices[0].item() * hop_size) - margin)
+    end_sample = min(waveform.numel(), int(active_indices[-1].item() * hop_size + frame_size) + margin)
+    if end_sample <= start_sample:
+        return waveform, {"trimmed": False, "trim_start_seconds": 0.0, "trim_end_seconds": 0.0}
+
+    trimmed_start = start_sample / float(sample_rate)
+    trimmed_end = (waveform.numel() - end_sample) / float(sample_rate)
+    if trimmed_start < 0.05 and trimmed_end < 0.05:
+        return waveform, {"trimmed": False, "trim_start_seconds": 0.0, "trim_end_seconds": 0.0}
+
+    return waveform[start_sample:end_sample], {
+        "trimmed": True,
+        "trim_start_seconds": trimmed_start,
+        "trim_end_seconds": trimmed_end,
+    }
+
+
+def prepare_audio_for_asr(audio_path: str, *, enabled: bool = True) -> tuple[str, dict, Path | None]:
+    """Create a temporary ASR input without changing the original analysis audio."""
+    path = Path(audio_path)
+    if not enabled:
+        return str(path), {"enabled": False}, None
+
+    try:
+        waveform, source_sample_rate = torchaudio.load(str(path))
+    except Exception as exc:
+        logger.warning("ASR preprocessing failed to load %s: %s", path, exc)
+        return str(path), {"enabled": True, "status": "load_failed", "error": str(exc)}, None
+
+    metadata: dict[str, Any] = {
+        "enabled": True,
+        "status": "applied",
+        "source_sample_rate": int(source_sample_rate),
+        "target_sample_rate": ASR_SAMPLE_RATE,
+        "source_channels": int(waveform.size(0)),
+        "steps": ["mono", "resample_16khz", "dc_remove", "highpass_60hz", "light_stationary_noise_reduction", "edge_silence_trim", "light_rms_normalization"],
+    }
+
+    if waveform.size(0) > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if source_sample_rate != ASR_SAMPLE_RATE:
+        waveform = T.Resample(orig_freq=source_sample_rate, new_freq=ASR_SAMPLE_RATE)(waveform)
+
+    mono = waveform.squeeze(0).float().contiguous()
+    original_rms = _rms(mono)
+    mono = mono - mono.mean()
+    try:
+        mono = AF.highpass_biquad(mono.unsqueeze(0), ASR_SAMPLE_RATE, cutoff_freq=60.0).squeeze(0)
+    except Exception as exc:
+        metadata["highpass_warning"] = str(exc)
+
+    denoised = _light_stationary_noise_reduction(mono, ASR_SAMPLE_RATE)
+    trimmed, trim_metadata = _trim_edge_silence(denoised, ASR_SAMPLE_RATE)
+    processed = trimmed.contiguous()
+
+    processed_rms = _rms(processed)
+    gain = 1.0
+    if processed_rms > 1e-6:
+        gain = min(3.0, max(0.35, ASR_TARGET_RMS / processed_rms))
+        processed = processed * gain
+
+    peak = float(processed.abs().max().item()) if processed.numel() else 0.0
+    if peak > 0.98:
+        processed = processed * (0.98 / peak)
+
+    final_peak = float(processed.abs().max().item()) if processed.numel() else 0.0
+    metadata.update(
+        {
+            "original_rms": original_rms,
+            "processed_rms_before_gain": processed_rms,
+            "target_rms": ASR_TARGET_RMS,
+            "gain": gain,
+            "final_peak": final_peak,
+            **trim_metadata,
+        }
+    )
+
+    temp_file = tempfile.NamedTemporaryFile(prefix="deeptrust_asr_", suffix=".wav", delete=False)
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    torchaudio.save(str(temp_path), processed.unsqueeze(0).cpu(), ASR_SAMPLE_RATE)
+    metadata["temporary_input"] = str(temp_path)
+    return str(temp_path), metadata, temp_path
 
 
 @lru_cache(maxsize=2)
@@ -98,6 +260,7 @@ def ensure_audio_transcript_sidecar(
     compute_type: str = "default",
     beam_size: int = 5,
     vad_filter: bool = False,
+    preprocess_audio: bool = True,
     overwrite: bool = False,
 ) -> dict:
     """Generate a transcript sidecar next to the audio when one is missing."""
@@ -124,8 +287,9 @@ def ensure_audio_transcript_sidecar(
 
     try:
         model, resolved_device = _load_whisper_model(model_name, device, compute_type)
+        asr_audio_path, preprocessing, temporary_path = prepare_audio_for_asr(str(path), enabled=preprocess_audio)
         segments_iter, info = model.transcribe(
-            str(path),
+            asr_audio_path,
             language=language,
             beam_size=beam_size,
             vad_filter=vad_filter,
@@ -148,6 +312,7 @@ def ensure_audio_transcript_sidecar(
                 "compute_type": compute_type,
                 "beam_size": beam_size,
                 "vad_filter": bool(vad_filter),
+                "preprocessing": preprocessing,
             },
             "source_audio": str(path),
             "source_audio_sha256": _file_sha256(path),
@@ -173,3 +338,9 @@ def ensure_audio_transcript_sidecar(
             },
             "error": str(exc),
         }
+    finally:
+        if "temporary_path" in locals() and temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except Exception:
+                logger.debug("Failed to remove temporary ASR input %s", temporary_path, exc_info=True)

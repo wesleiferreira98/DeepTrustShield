@@ -113,6 +113,16 @@ def _group_events(events: list[dict], *keys: str) -> dict[tuple, list[dict]]:
     return groups
 
 
+def _contextual_key(event: dict) -> tuple:
+    return (
+        event.get("phenomenon"),
+        event.get("context"),
+        event.get("position"),
+        event.get("target_segment"),
+        event.get("following_segment") or event.get("following_vowel") or "",
+    )
+
+
 def _dominant_variant_score(events: list[dict]) -> float:
     if not events:
         return 0.0
@@ -160,8 +170,12 @@ def calculate_phonetic_consistency(events: list[dict]) -> float:
     if not events:
         return 0.0
 
+    groups: dict[tuple, list[dict]] = {}
+    for event in events:
+        groups.setdefault(_contextual_key(event), []).append(event)
+
     group_scores = []
-    for grouped_events in _group_events(events, "phenomenon", "context").values():
+    for grouped_events in groups.values():
         if len(grouped_events) >= 2:
             group_scores.append(_dominant_variant_score(grouped_events))
 
@@ -185,10 +199,7 @@ def calculate_localized_disruption(events: list[dict], window_seconds: float) ->
             delta = _safe_float(candidate.get("start_time")) - current_start
             if delta > window_seconds:
                 break
-            same_context = (
-                current.get("phenomenon") == candidate.get("phenomenon")
-                and current.get("context") == candidate.get("context")
-            )
+            same_context = _contextual_key(current) == _contextual_key(candidate)
             if not same_context:
                 continue
             comparisons += 1
@@ -198,6 +209,105 @@ def calculate_localized_disruption(events: list[dict], window_seconds: float) ->
     if comparisons == 0:
         return 0.0
     return min(1.0, disruptions / float(comparisons))
+
+
+def detect_localized_disruptions(
+    events: list[dict],
+    *,
+    window_seconds: float,
+    threshold: float,
+    peak_margin: float,
+) -> dict:
+    """Find local variant switches that also coincide with a neural peak.
+
+    A disruption is intentionally stricter than simple variation: it requires
+    two classified events with the same contextual key, different variants,
+    temporal proximity, and local neural support near the calibrated threshold.
+    """
+    if len(events) < 2:
+        return {
+            "available": False,
+            "comparison_count": 0,
+            "raw_disruption_count": 0,
+            "aligned_disruption_count": 0,
+            "raw_score": 0.0,
+            "aligned_score": 0.0,
+            "phenomena": [],
+            "items": [],
+        }
+
+    peak_cutoff = max(0.0, threshold - peak_margin)
+    groups: dict[tuple, list[dict]] = {}
+    for event in events:
+        groups.setdefault(_contextual_key(event), []).append(event)
+
+    comparison_count = 0
+    raw_items = []
+    aligned_items = []
+
+    for key, grouped_events in groups.items():
+        if len(grouped_events) < 2:
+            continue
+        sorted_events = sorted(grouped_events, key=lambda item: _safe_float(item.get("start_time")))
+        for index, current in enumerate(sorted_events[:-1]):
+            current_start = _safe_float(current.get("start_time"))
+            for candidate in sorted_events[index + 1 :]:
+                delta = _safe_float(candidate.get("start_time")) - current_start
+                if delta > window_seconds:
+                    break
+                comparison_count += 1
+                if current.get("variant") == candidate.get("variant"):
+                    continue
+
+                local_scores = [
+                    _safe_float(item.get("neural_score_local"))
+                    for item in (current, candidate)
+                    if item.get("neural_score_local") is not None
+                ]
+                max_local_score = max(local_scores) if local_scores else 0.0
+                item = {
+                    "phenomenon": current.get("phenomenon"),
+                    "context": current.get("context"),
+                    "position": current.get("position"),
+                    "target_segment": current.get("target_segment"),
+                    "following_segment": current.get("following_segment") or current.get("following_vowel"),
+                    "start_time": current_start,
+                    "end_time": _safe_float(candidate.get("start_time")),
+                    "delta_seconds": delta,
+                    "from_variant": current.get("variant"),
+                    "to_variant": candidate.get("variant"),
+                    "from_word": current.get("word"),
+                    "to_word": candidate.get("word"),
+                    "max_neural_score_local": max_local_score,
+                    "aligned_with_neural_peak": max_local_score >= peak_cutoff,
+                }
+                raw_items.append(item)
+                if item["aligned_with_neural_peak"]:
+                    aligned_items.append(item)
+
+    raw_score = len(raw_items) / float(comparison_count) if comparison_count else 0.0
+    aligned_score = len(aligned_items) / float(comparison_count) if comparison_count else 0.0
+    phenomena = sorted({str(item.get("phenomenon")) for item in aligned_items if item.get("phenomenon")})
+    aligned_by_phenomenon: dict[str, int] = {}
+    for item in aligned_items:
+        phenomenon = str(item.get("phenomenon") or "")
+        if phenomenon:
+            aligned_by_phenomenon[phenomenon] = aligned_by_phenomenon.get(phenomenon, 0) + 1
+
+    return {
+        "available": bool(raw_items),
+        "comparison_count": comparison_count,
+        "raw_disruption_count": len(raw_items),
+        "aligned_disruption_count": len(aligned_items),
+        "aligned_disruption_count_by_phenomenon": dict(sorted(aligned_by_phenomenon.items())),
+        "raw_score": min(1.0, raw_score),
+        "aligned_score": min(1.0, aligned_score),
+        "phenomena": phenomena,
+        "items": aligned_items[:12],
+        "unfiltered_items": raw_items[:12],
+        "peak_cutoff": peak_cutoff,
+        "window_seconds": window_seconds,
+    }
 
 
 def smooth_disruption_score(raw_score: float, event_count: int, min_events_for_full_weight: int = 12) -> float:
@@ -301,18 +411,23 @@ def apply_phonetic_rules(
     event_count, coverage_score = calculate_coverage(valid_events, thresholds)
     evidence_quality = calculate_evidence_quality(all_events, coverage_score)
     consistency_score = calculate_phonetic_consistency(valid_events)
-    raw_disruption_score = calculate_localized_disruption(
-        valid_events,
-        _safe_float(thresholds.get("disruption_window_seconds"), 6.0),
-    )
-    disruption_score = smooth_disruption_score(raw_disruption_score, event_count)
-
     neural_score = _safe_float(neural_result.get("p_fake"))
     threshold = _safe_float(neural_result.get("threshold"), 0.5)
+    peak_margin = _safe_float(thresholds.get("neural_peak_margin"), 0.08)
+    window_seconds = _safe_float(thresholds.get("disruption_window_seconds"), 6.0)
+    disruption_details = detect_localized_disruptions(
+        valid_events,
+        window_seconds=window_seconds,
+        threshold=threshold,
+        peak_margin=peak_margin,
+    )
+    raw_disruption_score = disruption_details["aligned_score"]
+    disruption_score = smooth_disruption_score(raw_disruption_score, event_count)
+
     alignment_score = calculate_alignment_score(
         valid_events,
         threshold,
-        _safe_float(thresholds.get("neural_peak_margin"), 0.08),
+        peak_margin,
     )
     plausibility_score = max(0.0, min(1.0, (0.60 * consistency_score) + (0.40 * (1.0 - disruption_score))))
 
@@ -336,6 +451,16 @@ def apply_phonetic_rules(
     rules = knowledge.get("rules") or []
     low_coverage_cutoff = _safe_float(thresholds.get("low_coverage_cutoff"), 0.30)
     normal_coverage_cutoff = _safe_float(thresholds.get("normal_coverage_cutoff"), 0.60)
+    localized_disruption_min_pairs = _safe_int(thresholds.get("localized_disruption_min_pairs"), 2)
+    aligned_disruption_min_pairs = _safe_int(thresholds.get("aligned_disruption_min_pairs"), 2)
+    multi_phenomena_disruption_min_phenomena = _safe_int(thresholds.get("multi_phenomena_disruption_min_phenomena"), 2)
+    has_repeated_aligned_disruption = disruption_details["aligned_disruption_count"] >= aligned_disruption_min_pairs
+    has_localized_disruption = disruption_details["raw_disruption_count"] >= localized_disruption_min_pairs
+    has_multi_phenomena_disruption = (
+        has_repeated_aligned_disruption
+        and len(disruption_details["phenomena"]) >= multi_phenomena_disruption_min_phenomena
+    )
+    aligned_disruption_count_by_phenomenon = disruption_details.get("aligned_disruption_count_by_phenomenon") or {}
 
     if coverage_score < low_coverage_cutoff:
         rule = next((item for item in rules if item.get("id") == "G3"), None)
@@ -355,6 +480,7 @@ def apply_phonetic_rules(
             "linguistic_plausibility_score": plausibility_score,
             "raw_localized_disruption_score": raw_disruption_score,
             "localized_disruption_score": disruption_score,
+            "localized_disruption": disruption_details,
             "alignment_score": alignment_score,
             "adjustment": 0.0,
             "activated_rules": activated_rules,
@@ -394,9 +520,20 @@ def apply_phonetic_rules(
             "multiple_phenomena_shift_same_interval",
             "high_neural_score_with_aligned_linguistic_disruption",
         }:
-            should_activate = disruption_score >= 0.45 and _has_repeated_variant_contrast(rule_events)
+            phenomenon = str(rule.get("phenomenon") or "")
+            phenomenon_has_disruption = phenomenon == "global" or (
+                _safe_int(aligned_disruption_count_by_phenomenon.get(phenomenon), 0) >= aligned_disruption_min_pairs
+            )
+            should_activate = (
+                has_localized_disruption
+                and has_repeated_aligned_disruption
+                and phenomenon_has_disruption
+                and _has_repeated_variant_contrast(rule_events)
+            )
             if condition == "high_neural_score_with_aligned_linguistic_disruption":
                 should_activate = should_activate and alignment_score >= 0.50
+            if condition == "multiple_phenomena_shift_same_interval":
+                should_activate = should_activate and has_multi_phenomena_disruption
         elif condition in {
             "verb_infinitive_final_r_deletion_consistent",
         }:
@@ -483,6 +620,7 @@ def apply_phonetic_rules(
         "linguistic_plausibility_score": plausibility_score,
         "raw_localized_disruption_score": raw_disruption_score,
         "localized_disruption_score": disruption_score,
+        "localized_disruption": disruption_details,
         "alignment_score": alignment_score,
         "adjustment": adjustment,
         "activated_rules": activated_rules,

@@ -60,16 +60,23 @@ def summarize_phonetic_events(events: list[dict]) -> dict:
     strong = [event for event in classified if _event_quality_label(event) == "strong"]
     moderate = [event for event in classified if _event_quality_label(event) == "moderate"]
     weak = [event for event in classified if _event_quality_label(event) == "weak"]
+    reliable = [event for event in classified if _event_quality_label(event) in {"strong", "moderate"}]
+    unknown = [event for event in events if event.get("variant") in {"", None, "unknown"}]
 
     return {
         "candidate_count": len(events),
         "classified_candidate_count": len(classified),
+        "reliable_event_count": len(reliable),
+        "unknown_candidate_count": len(unknown),
         "strong_classified_count": len(strong),
         "moderate_classified_count": len(moderate),
         "weak_classified_count": len(weak),
         "classified_ratio": len(classified) / float(len(events)) if events else 0.0,
+        "reliable_event_ratio": len(reliable) / float(len(events)) if events else 0.0,
         "candidate_by_phenomenon": _event_counter(events, "phenomenon"),
+        "candidate_by_context": _event_counter(events, "phenomenon", "context"),
         "classified_by_phenomenon": _event_counter(classified, "phenomenon"),
+        "classified_by_context": _event_counter(classified, "phenomenon", "context"),
         "classified_by_variant": _event_counter(classified, "phenomenon", "variant"),
         "average_classified_confidence": (
             sum(_safe_float(event.get("confidence")) for event in classified) / float(len(classified))
@@ -122,6 +129,28 @@ def _phonetic_event(
     if extra:
         event.update(extra)
     event["event_quality"] = _event_quality_label(event)
+    acoustic_features = event.get("acoustic_features") if isinstance(event.get("acoustic_features"), dict) else {}
+    event["candidate"] = {
+        "phenomenon": phenomenon,
+        "word": word,
+        "target_segment": target_segment,
+        "expected_context": context,
+        "position": position,
+        "start_time": float(start_time),
+        "end_time": float(end_time),
+        "source": source,
+    }
+    event["evidence"] = {
+        "available": bool(acoustic_features),
+        "features": acoustic_features,
+        "method": event.get("variant_method"),
+    }
+    event["decision"] = {
+        "variant": variant,
+        "confidence": float(confidence),
+        "quality": event["event_quality"],
+        "method": event.get("variant_method"),
+    }
     return event
 
 
@@ -551,6 +580,45 @@ def _looks_like_infinitive_candidate(norm: str) -> bool:
     return norm.endswith(("ar", "er", "ir"))
 
 
+def _starts_with_vowel(norm: str) -> bool:
+    return bool(norm) and norm[0] in "aeiou"
+
+
+def _external_coda_context(item: dict, next_item: dict | None, next_norm: str) -> tuple[str, str]:
+    if not next_item or not next_norm:
+        return "external_coda_pause", "pause"
+
+    current_end = _safe_float(item.get("end"))
+    next_start = _safe_float(next_item.get("start"), current_end)
+    if next_start - current_end > 0.30:
+        return "external_coda_pause", "pause"
+
+    following_segment = next_norm[0]
+    if _starts_with_vowel(next_norm):
+        return "external_coda_vowel", following_segment
+    return "external_coda_consonant", following_segment
+
+
+def _is_s_coda_candidate(norm: str, index: int) -> tuple[bool, str]:
+    prev_char = norm[index - 1] if index > 0 else ""
+    next_char = norm[index + 1] if index + 1 < len(norm) else ""
+
+    # Orthographic "ss" is intervocalic fricative spelling in words like
+    # "disse" and "isso"; it is not evidence of /s/ in coda for V1.
+    if prev_char == "s" or next_char == "s":
+        return False, "orthographic_ss"
+
+    is_external = index == len(norm) - 1
+    if is_external:
+        return True, "external_coda"
+
+    is_internal_coda = bool(next_char and next_char not in "aeiou")
+    if is_internal_coda:
+        return True, "internal_coda"
+
+    return False, "not_coda"
+
+
 def _rotic_events(
     word: str,
     norm: str,
@@ -598,6 +666,8 @@ def _s_coda_events(
     word: str,
     norm: str,
     item: dict,
+    next_item: dict | None,
+    next_norm: str,
     event_id: str,
     segments: list[dict],
     waveform: torch.Tensor | None,
@@ -613,13 +683,16 @@ def _s_coda_events(
     for index, char in enumerate(norm):
         if char != "s":
             continue
+        is_candidate, candidate_reason = _is_s_coda_candidate(norm, index)
+        if not is_candidate:
+            continue
         next_char = norm[index + 1] if index + 1 < len(norm) else ""
         is_external = index == len(norm) - 1
-        is_internal_coda = bool(next_char and next_char not in "aeiou")
-        if not is_external and not is_internal_coda:
-            continue
-
-        context = "external_coda_pause" if is_external else "internal_coda"
+        if is_external:
+            context, following_segment = _external_coda_context(item, next_item, next_norm)
+        else:
+            context = "internal_coda"
+            following_segment = next_char
         word_confidence = _safe_float(item.get("confidence"), DEFAULT_EVENT_CONFIDENCE)
         acoustic = _classify_s_coda_acoustics(
             waveform,
@@ -646,7 +719,9 @@ def _s_coda_events(
                 source="acoustic_transcript_candidate" if acoustic["variant"] != "unknown" else "transcript_candidate",
                 neural_score_local=_segment_score_for_time(segments, midpoint),
                 extra={
-                    "following_segment": next_char or "pause",
+                    "following_segment": following_segment,
+                    "candidate_method": "orthographic_conservative_s_coda",
+                    "candidate_reason": candidate_reason,
                     "variant_method": acoustic["method"],
                     "acoustic_features": {
                         key: value
@@ -725,10 +800,12 @@ def extract_phonetic_events_from_words(
         norm = _normalize_word(word)
         if not norm:
             continue
+        next_item = word_items[word_index + 1] if word_index + 1 < len(word_items) else None
+        next_norm = _normalize_word(str(next_item.get("word") or "")) if next_item else ""
         base_id = f"ev_{len(events) + 1:04d}"
         events.extend(_rotic_events(word, norm, item, base_id, segments, waveform, sample_rate))
         base_id = f"ev_{len(events) + 1:04d}"
-        events.extend(_s_coda_events(word, norm, item, base_id, segments, waveform, sample_rate))
+        events.extend(_s_coda_events(word, norm, item, next_item, next_norm, base_id, segments, waveform, sample_rate))
         base_id = f"ev_{len(events) + 1:04d}"
         events.extend(_td_before_i_events(word, norm, item, base_id, segments, waveform, sample_rate))
     return events

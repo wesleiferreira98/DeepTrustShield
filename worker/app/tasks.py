@@ -178,6 +178,7 @@ def process_deepfake_audio(job_id: str, audio_path: str):
                 compute_type=config.AUDIO_ASR_COMPUTE_TYPE,
                 beam_size=config.AUDIO_ASR_BEAM_SIZE,
                 vad_filter=config.AUDIO_ASR_VAD_FILTER,
+                preprocess_audio=config.AUDIO_ASR_PREPROCESS_ENABLED,
             )
             if asr_summary.get("available"):
                 phonetic_extraction = extract_phonetic_events(
