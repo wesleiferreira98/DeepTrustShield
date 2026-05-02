@@ -302,3 +302,104 @@ Ainda é uma V1, mas já há um fluxo completo e auditável combinando:
 - explicações simbólicas.
 
 O teste com áudio real de Salvador mostrou exatamente o caso de uso desejado: o neural levantou suspeita, mas a camada simbólica trouxe contexto linguístico para evitar uma conclusão agressiva.
+
+## Atualização: refinamentos de qualidade
+
+Depois da primeira rodada, foram adicionados novos freios para reduzir excesso
+de confiança da camada fonético-fonológica.
+
+### Qualidade da evidência fonética
+
+A camada agora separa melhor:
+
+- eventos candidatos;
+- eventos classificados;
+- eventos classificados fortes;
+- eventos classificados moderados;
+- eventos classificados fracos.
+
+A saída de extração passou a incluir um resumo como:
+
+```text
+candidate_count
+classified_candidate_count
+strong_classified_count
+moderate_classified_count
+classified_ratio
+candidate_by_phenomenon
+classified_by_phenomenon
+classified_by_variant
+average_classified_confidence
+```
+
+Isso evita tratar muitos candidatos `unknown` como se fossem evidência
+linguística forte.
+
+### Ajuste simbólico proporcional
+
+O ajuste fonético agora é limitado pela qualidade da evidência.
+
+Antes, o caso Salvador podia receber:
+
+```text
+phonetic adjustment: -0.20
+```
+
+Mesmo com uma base de eventos ainda pequena.
+
+Depois do refinamento, no mesmo áudio:
+
+```text
+event_count: 12
+evidence_quality_score: 0.821
+phonetic adjustment: -0.12
+```
+
+Ou seja, a camada continua reconhecendo padrões linguísticos plausíveis, mas
+atua com menos força enquanto os classificadores acústicos ainda são V1.
+
+### Suavização de ruptura
+
+A métrica de ruptura localizada agora é suavizada quando há poucos eventos.
+Isso reduz falsos alertas causados por uma ou duas classificações isoladas.
+
+### Diagnóstico dos picos finais
+
+Foi criado um diagnóstico acústico para segmentos acima do threshold.
+
+Ele verifica:
+
+- se os picos aparecem no final do áudio;
+- RMS do trecho;
+- silêncio do trecho;
+- clipping;
+- mudança de volume em relação ao segmento anterior.
+
+No áudio real de Salvador, os dois segmentos acima do threshold continuam
+aparecendo no final:
+
+```text
+terminal_suspicious_count: 2
+terminal_suspicious_ratio: 1.0
+```
+
+Mas as métricas simples não indicaram artefato final evidente:
+
+```text
+possible_end_artifact: false
+max_silence_ratio: 0.3048
+max_clipping_ratio: 0.0
+max_volume_change_ratio: 0.0182
+```
+
+Isso significa que o pico final ainda merece investigação, mas não parece ser
+explicado apenas por silêncio, clipping ou salto brusco de volume.
+
+### Impacto esperado
+
+Com esses ajustes, a camada simbólica fica mais calibrada:
+
+- não ignora o conhecimento fonético;
+- não transforma heurística inicial em prova forte;
+- mantém explicabilidade;
+- reduz chance de absolver ou condenar com evidência fraca.

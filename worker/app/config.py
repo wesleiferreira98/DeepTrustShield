@@ -26,6 +26,13 @@ class Config:
     THRESHOLD_LOW = 0.50  # Abaixo de 50% = baixo risco (provavelmente real)
     THRESHOLD_HIGH = 0.80  # Acima de 80% = alto risco (provavelmente fake)
     AUDIO_REVIEW_MARGIN = float(os.getenv("AUDIO_REVIEW_MARGIN", "0.15"))
+    AUDIO_ASR_ENABLED = os.getenv("AUDIO_ASR_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+    AUDIO_ASR_MODEL = os.getenv("AUDIO_ASR_MODEL", "medium")
+    AUDIO_ASR_LANGUAGE = os.getenv("AUDIO_ASR_LANGUAGE", "pt")
+    AUDIO_ASR_DEVICE = os.getenv("AUDIO_ASR_DEVICE", "auto")
+    AUDIO_ASR_COMPUTE_TYPE = os.getenv("AUDIO_ASR_COMPUTE_TYPE", "default")
+    AUDIO_ASR_BEAM_SIZE = int(os.getenv("AUDIO_ASR_BEAM_SIZE", "5"))
+    AUDIO_ASR_VAD_FILTER = os.getenv("AUDIO_ASR_VAD_FILTER", "false").lower() in {"1", "true", "yes", "on"}
     
     # Quality checks
     MIN_FACE_SIZE = 80  # pixels

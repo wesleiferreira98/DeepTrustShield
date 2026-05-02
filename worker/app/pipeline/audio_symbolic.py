@@ -24,6 +24,8 @@ DEFAULT_THRESHOLDS = {
     "isolated_fake_max_ratio": 0.35,
     "domain_warning_real_seconds": 8.0,
     "moderate_silence_ratio": 0.35,
+    "terminal_segment_margin_seconds": 1.0,
+    "segment_volume_change_ratio": 0.45,
 }
 
 
@@ -125,6 +127,138 @@ def _base_flags() -> dict:
         "phonetic_coverage_insufficient": False,
         "phonetic_consistency_support": False,
         "phonetic_disruption_alert": False,
+        "terminal_suspicious_segments": False,
+        "possible_end_artifact": False,
+    }
+
+
+def _slice_waveform(waveform: torch.Tensor, sample_rate: int, start: float, end: float) -> torch.Tensor:
+    start_sample = max(0, int(start * sample_rate))
+    end_sample = min(int(end * sample_rate), waveform.size(-1))
+    if end_sample <= start_sample:
+        return torch.empty(0)
+    return waveform[:, start_sample:end_sample]
+
+
+def _segment_audio_metrics(samples: torch.Tensor) -> dict:
+    if samples.numel() == 0:
+        return {
+            "rms": 0.0,
+            "silence_ratio": 1.0,
+            "clipping_ratio": 0.0,
+        }
+    abs_samples = samples.abs()
+    return {
+        "rms": float(torch.sqrt(torch.mean(samples.pow(2))).item()),
+        "silence_ratio": float((abs_samples < DEFAULT_THRESHOLDS["silence_amplitude"]).float().mean().item()),
+        "clipping_ratio": float((abs_samples >= 0.99).float().mean().item()),
+    }
+
+
+def diagnose_suspicious_audio_segments(
+    audio_path: str,
+    audio_info: dict,
+    segments: list[dict],
+    threshold: float,
+    thresholds: dict | None = None,
+) -> dict:
+    """Inspect audio-quality clues around segments above the decision threshold."""
+    thresholds = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+    suspicious = [
+        segment
+        for segment in segments
+        if isinstance(segment.get("p_fake"), (int, float)) and _safe_float(segment.get("p_fake")) >= threshold
+    ]
+    if not suspicious:
+        return {
+            "available": False,
+            "reason": "no_suspicious_segments",
+            "segments": [],
+            "summary": {
+                "suspicious_count": 0,
+                "terminal_suspicious_count": 0,
+                "possible_end_artifact": False,
+            },
+        }
+
+    target_sample_rate = int(audio_info.get("target_sample_rate") or audio_info.get("sample_rate") or 16000)
+    try:
+        waveform, loaded_info = _load_mono_waveform(audio_path, target_sample_rate)
+    except Exception as exc:
+        logger.warning("Failed to diagnose suspicious audio segments from %s: %s", audio_path, exc)
+        return {
+            "available": False,
+            "reason": "audio_load_failed",
+            "error": str(exc),
+            "segments": [],
+            "summary": {
+                "suspicious_count": len(suspicious),
+                "terminal_suspicious_count": 0,
+                "possible_end_artifact": False,
+            },
+        }
+
+    duration = _safe_float(audio_info.get("duration_seconds"), _safe_float(loaded_info.get("duration_seconds")))
+    diagnostics = []
+    terminal_count = 0
+    possible_end_artifact = False
+
+    for segment in suspicious[:8]:
+        start = _safe_float(segment.get("start"))
+        end = _safe_float(segment.get("end"))
+        index = int(segment.get("index", -1))
+        metrics = _segment_audio_metrics(_slice_waveform(waveform, target_sample_rate, start, end))
+        previous = next((item for item in segments if int(item.get("index", -99)) == index - 1), None)
+        previous_metrics = None
+        volume_change_ratio = 0.0
+        if previous:
+            prev_start = _safe_float(previous.get("start"))
+            prev_end = _safe_float(previous.get("end"))
+            previous_metrics = _segment_audio_metrics(_slice_waveform(waveform, target_sample_rate, prev_start, prev_end))
+            volume_change_ratio = abs(metrics["rms"] - previous_metrics["rms"]) / max(previous_metrics["rms"], 1e-6)
+
+        is_terminal = end >= max(0.0, duration - thresholds["terminal_segment_margin_seconds"])
+        if is_terminal:
+            terminal_count += 1
+
+        segment_possible_end_artifact = bool(
+            is_terminal
+            and (
+                metrics["silence_ratio"] >= thresholds["moderate_silence_ratio"]
+                or volume_change_ratio >= thresholds["segment_volume_change_ratio"]
+                or metrics["clipping_ratio"] >= thresholds["clipping_ratio"]
+            )
+        )
+        possible_end_artifact = possible_end_artifact or segment_possible_end_artifact
+
+        diagnostics.append(
+            {
+                "index": index,
+                "start": start,
+                "end": end,
+                "p_fake": _safe_float(segment.get("p_fake")),
+                "terminal_segment": is_terminal,
+                "possible_end_artifact": segment_possible_end_artifact,
+                "rms": metrics["rms"],
+                "silence_ratio": metrics["silence_ratio"],
+                "clipping_ratio": metrics["clipping_ratio"],
+                "previous_rms": previous_metrics["rms"] if previous_metrics else None,
+                "volume_change_ratio": volume_change_ratio,
+            }
+        )
+
+    return {
+        "available": True,
+        "segments": diagnostics,
+        "summary": {
+            "suspicious_count": len(suspicious),
+            "terminal_suspicious_count": terminal_count,
+            "terminal_suspicious_ratio": terminal_count / float(len(suspicious)) if suspicious else 0.0,
+            "possible_end_artifact": possible_end_artifact,
+            "max_volume_change_ratio": max((item["volume_change_ratio"] for item in diagnostics), default=0.0),
+            "max_silence_ratio": max((item["silence_ratio"] for item in diagnostics), default=0.0),
+            "max_clipping_ratio": max((item["clipping_ratio"] for item in diagnostics), default=0.0),
+        },
     }
 
 
@@ -224,6 +358,7 @@ def evaluate_audio_symbolic_rules(
     symbolic_score = 0.50
     segments = segments or neural_result.get("segments") or []
     segment_summary = _summarize_segments(segments, threshold)
+    segment_diagnostics = neural_result.get("segment_diagnostics") or {}
 
     if not symbolic_features.get("available", True):
         flags["feature_extraction_failed"] = True
@@ -315,6 +450,16 @@ def evaluate_audio_symbolic_rules(
             adjustments.append({"reason": "consistent_suspicious_segments", "delta": 0.10})
             symbolic_score += 0.10
 
+    diagnostic_summary = segment_diagnostics.get("summary") or {}
+    if diagnostic_summary.get("terminal_suspicious_count", 0) > 0:
+        flags["terminal_suspicious_segments"] = True
+        explanations.append("Os trechos acima do limite aparecem no fim do audio; vale revisar encerramento, corte ou compressao.")
+    if diagnostic_summary.get("possible_end_artifact"):
+        flags["possible_end_artifact"] = True
+        explanations.append("Ha sinais acusticos no trecho final que podem explicar pico localizado do detector.")
+        adjustments.append({"reason": "possible_end_artifact", "delta": -0.05})
+        symbolic_score -= 0.05
+
     regional_bias_review = _evaluate_regional_bias_hypothesis(symbolic_features, segment_summary, flags)
     if regional_bias_review["review_needed"]:
         flags["regional_bias_review"] = True
@@ -332,6 +477,7 @@ def evaluate_audio_symbolic_rules(
     phonetic_status = phonetic_review.get("status")
     if phonetic_status == "insufficient_coverage":
         flags["phonetic_coverage_insufficient"] = True
+        explanations.append("A camada fonetico-fonologica foi executada, mas a cobertura de eventos confiaveis ainda foi baixa.")
     elif phonetic_status == "applied":
         phonetic_adjustment = _safe_float(phonetic_review.get("adjustment"))
         if phonetic_adjustment < 0:
@@ -343,6 +489,16 @@ def evaluate_audio_symbolic_rules(
             adjustments.append({"reason": "phonetic_symbolic_layer", "delta": phonetic_adjustment})
             symbolic_score += phonetic_adjustment
             explanations.extend(phonetic_review.get("explanations") or [])
+    elif phonetic_status == "no_rule_triggered":
+        event_count = int(phonetic_review.get("event_count") or 0)
+        evidence_quality = phonetic_review.get("evidence_quality") or {}
+        quality_score = _safe_float(evidence_quality.get("quality_score"))
+        if event_count > 0:
+            explanations.append(
+                "A camada fonetico-fonologica encontrou eventos analisaveis, mas nao detectou variacao forte ou ruptura linguistica."
+            )
+            if quality_score:
+                explanations.append(f"Qualidade da evidencia fonetica: {quality_score:.2f} em uma escala de 0 a 1.")
 
     symbolic_score = max(0.0, min(1.0, symbolic_score))
     active_quality_flags = [
@@ -354,6 +510,7 @@ def evaluate_audio_symbolic_rules(
         flags["partial_audio_analysis"],
         flags["regional_bias_review"],
         flags["domain_mismatch_warning"],
+        flags["possible_end_artifact"],
     ]
 
     if flags["very_short_audio"] or (flags["high_silence"] and flags["low_volume"]):
@@ -361,6 +518,7 @@ def evaluate_audio_symbolic_rules(
     elif (
         flags["near_threshold"]
         or flags["isolated_suspicious_segment"]
+        or flags["terminal_suspicious_segments"]
         or flags["phonetic_coverage_insufficient"]
         or any(active_quality_flags)
     ):
@@ -384,6 +542,7 @@ def evaluate_audio_symbolic_rules(
         "explanations": explanations,
         "adjustments": adjustments,
         "segment_summary": segment_summary,
+        "segment_diagnostics": segment_diagnostics,
         "regional_bias_review": regional_bias_review,
         "phonetic_review": phonetic_review,
         "thresholds": thresholds,
@@ -437,6 +596,125 @@ def combine_audio_decision(neural_result: dict, symbolic_result: dict) -> dict:
         "explanations": symbolic_result.get("explanations", []),
         "adjustments": symbolic_result.get("adjustments", []),
         "segment_summary": segment_summary,
+        "segment_diagnostics": symbolic_result.get("segment_diagnostics", {}),
         "regional_bias_review": symbolic_result.get("regional_bias_review", {}),
         "phonetic_review": symbolic_result.get("phonetic_review", {}),
+    }
+
+
+def generate_audio_executive_summary(audio_summary: dict) -> dict:
+    """Build a concise, user-facing explanation for the audio decision."""
+    symbolic = audio_summary.get("symbolic") or {}
+    decision = symbolic.get("decision") or audio_summary.get("decision") or "undetermined"
+    risk_level = symbolic.get("risk_level") or "undetermined"
+    confidence = symbolic.get("confidence") or "moderate"
+    segment_summary = symbolic.get("segment_summary") or audio_summary.get("segment_summary") or {}
+    segment_diagnostics = symbolic.get("segment_diagnostics") or audio_summary.get("segment_diagnostics") or {}
+    diagnostic_summary = segment_diagnostics.get("summary") or {}
+    phonetic_review = symbolic.get("phonetic_review") or {}
+    flags = symbolic.get("flags") or {}
+
+    decision_labels = {
+        "real": "real",
+        "fake": "fake",
+        "inconclusive": "inconclusivo",
+        "suspicious_segment": "com suspeita localizada",
+        "undetermined": "indeterminado",
+    }
+    risk_labels = {
+        "low": "baixo",
+        "medium": "médio",
+        "high": "alto",
+        "undetermined": "indeterminado",
+    }
+    confidence_labels = {
+        "low": "baixa",
+        "moderate": "moderada",
+        "high": "alta",
+    }
+
+    title = f"Áudio {decision_labels.get(decision, decision)}"
+    if decision == "real" and flags.get("terminal_suspicious_segments"):
+        title = "Áudio provavelmente real, com revisão recomendada"
+    elif decision == "inconclusive" and flags.get("phonetic_consistency_support"):
+        title = "Áudio inconclusivo, com sinais linguísticos compatíveis com fala natural"
+    elif decision == "suspicious_segment":
+        title = "Suspeita localizada em trecho específico"
+
+    lines = [
+        f"O áudio foi classificado como {decision_labels.get(decision, decision)}.",
+        (
+            "O nível de risco estimado é "
+            f"{risk_labels.get(risk_level, risk_level)} e a confiança da leitura simbólica é "
+            f"{confidence_labels.get(confidence, confidence)}."
+        ),
+    ]
+
+    fake_count = int(segment_summary.get("fake_count") or 0)
+    count = int(segment_summary.get("count") or 0)
+    fake_ratio = _safe_float(segment_summary.get("fake_ratio"))
+    if count > 0:
+        if fake_count == 0:
+            lines.append("Nenhuma janela ultrapassou o limite calibrado de áudio fake.")
+        elif diagnostic_summary.get("terminal_suspicious_count", 0) > 0:
+            lines.append(
+                f"A suspeita neural ficou concentrada em {fake_count} de {count} janelas, principalmente no final do áudio."
+            )
+        elif fake_ratio <= DEFAULT_THRESHOLDS["isolated_fake_max_ratio"]:
+            lines.append(f"A suspeita neural ficou concentrada em poucos trechos: {fake_count} de {count} janelas.")
+        else:
+            lines.append(f"{fake_count} de {count} janelas ficaram acima do limite calibrado.")
+
+    if phonetic_review.get("status") == "applied":
+        adjustment = _safe_float(phonetic_review.get("adjustment"))
+        if adjustment < 0:
+            lines.append("Foram encontrados padrões fonético-fonológicos compatíveis com fala natural.")
+        elif adjustment > 0:
+            lines.append("A camada fonético-fonológica encontrou sinais de ruptura que aumentam a suspeita.")
+        else:
+            lines.append("A camada fonético-fonológica foi aplicada, mas não alterou a decisão.")
+    elif phonetic_review.get("status") == "insufficient_coverage":
+        lines.append("A camada fonético-fonológica não teve eventos suficientes para calibrar a decisão.")
+    elif phonetic_review.get("status") == "no_rule_triggered":
+        event_count = int(phonetic_review.get("event_count") or 0)
+        evidence_quality = phonetic_review.get("evidence_quality") or {}
+        quality_score = _safe_float(evidence_quality.get("quality_score"))
+        if event_count > 0:
+            lines.append(
+                "A camada fonético-fonológica analisou eventos do áudio, "
+                "mas não encontrou variação relevante ou ruptura linguística forte para calibrar a decisão."
+            )
+            if quality_score:
+                lines.append(f"A qualidade da evidência fonética ficou em {quality_score:.2f} em uma escala de 0 a 1.")
+        else:
+            lines.append("Eventos fonéticos foram extraídos, mas nenhuma regra linguística forte foi acionada.")
+
+    if diagnostic_summary.get("terminal_suspicious_count", 0) > 0:
+        if diagnostic_summary.get("possible_end_artifact"):
+            lines.append("Há sinais acústicos no encerramento que podem explicar parte do pico final.")
+        else:
+            lines.append("Os picos finais não parecem ser explicados apenas por silêncio, clipping ou salto brusco de volume.")
+
+    if decision in {"inconclusive", "suspicious_segment"} or flags.get("terminal_suspicious_segments"):
+        if flags.get("terminal_suspicious_segments"):
+            recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos finais para análise contextual."
+        else:
+            recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos suspeitos para análise contextual."
+    elif decision == "fake":
+        recommendation = "O sistema mantém a classificação como suspeita e prioriza os trechos com maior score para explicação automática."
+    elif decision == "real":
+        recommendation = "Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio."
+    else:
+        recommendation = "Recomenda-se nova análise com áudio de melhor qualidade ou maior duração."
+
+    lines.append(recommendation)
+
+    return {
+        "title": title,
+        "decision": decision,
+        "risk_level": risk_level,
+        "confidence": confidence,
+        "summary": " ".join(lines),
+        "bullets": lines,
+        "recommendation": recommendation,
     }

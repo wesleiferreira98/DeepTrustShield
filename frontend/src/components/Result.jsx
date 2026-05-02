@@ -89,6 +89,7 @@ function Result({
 
   const audioSymbolic = result.audio_summary?.symbolic || null;
   const audioSegmentSummary = audioSymbolic?.segment_summary || result.audio_summary?.segment_summary || null;
+  const audioTranscript = result.audio_summary?.transcript || null;
   const activeAudioFlags = Object.entries(audioSymbolic?.flags || {})
     .filter(([_, value]) => value)
     .map(([key]) => key);
@@ -122,6 +123,8 @@ function Result({
     phonetic_coverage_insufficient: 'Cobertura fonetica baixa',
     phonetic_consistency_support: 'Consistencia fonetica',
     phonetic_disruption_alert: 'Ruptura fonetica',
+    terminal_suspicious_segments: 'Pico no final',
+    possible_end_artifact: 'Possivel artefato final',
   };
 
   const confidenceLabels = {
@@ -322,6 +325,26 @@ function Result({
           )}
         </div>
 
+        {analysisMode === 'audio' && result.audio_summary?.executive_summary && (
+          <div className="audio-executive-summary">
+            <h3>{result.audio_summary.executive_summary.title}</h3>
+            <p>{result.audio_summary.executive_summary.summary}</p>
+          </div>
+        )}
+
+        {analysisMode === 'audio' && audioTranscript?.text && (
+          <div className="audio-transcript-section">
+            <div className="audio-transcript-header">
+              <h3>Transcricao automatica</h3>
+              <span>
+                {audioTranscript.word_count || 0} palavras
+                {audioTranscript.asr?.model ? ` · ${audioTranscript.asr.model}` : ''}
+              </span>
+            </div>
+            <p>{audioTranscript.text}</p>
+          </div>
+        )}
+
         {analysisMode === 'audio' && audioSymbolic && (
           <div className="audio-symbolic-section">
             <h3>Revisao simbolica</h3>
@@ -354,6 +377,17 @@ function Result({
                   {audioSymbolic.phonetic_review.status === 'insufficient_coverage'
                     ? 'Base simbolica carregada, mas ainda sem eventos foneticos suficientes para calibracao linguistica.'
                     : `Status: ${audioSymbolic.phonetic_review.status || 'indisponivel'}`}
+                </span>
+              </div>
+            )}
+            {audioSymbolic.segment_diagnostics?.summary?.terminal_suspicious_count > 0 && (
+              <div className="regional-review-box">
+                <strong>Diagnostico dos picos</strong>
+                <span>
+                  {audioSymbolic.segment_diagnostics.summary.terminal_suspicious_count} trecho(s) acima do limite aparecem no final do audio.
+                  {audioSymbolic.segment_diagnostics.summary.possible_end_artifact
+                    ? ' Ha sinais de possivel artefato acustico no encerramento.'
+                    : ' Nao ha artefato final evidente pelas metricas simples.'}
                 </span>
               </div>
             )}

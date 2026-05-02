@@ -116,7 +116,7 @@ Para transcrever um unico audio:
 ```bash
 .venv/bin/python scripts/build_audio_transcript_sidecars.py \
   --input caminho/para/audio.ogg \
-  --model small \
+  --model medium \
   --device cuda \
   --compute-type float16 \
   --language pt
@@ -128,7 +128,7 @@ Para transcrever uma pasta:
 .venv/bin/python scripts/build_audio_transcript_sidecars.py \
   --input audio/data/eval_external \
   --recursive \
-  --model small \
+  --model medium \
   --device cuda \
   --compute-type float16 \
   --language pt
@@ -139,7 +139,7 @@ Para transcrever os audios de um manifesto:
 ```bash
 .venv/bin/python scripts/build_audio_transcript_sidecars.py \
   --manifest audio/data/manifests/fake_braccent_d_codec_equalized_manifest.csv \
-  --model small \
+  --model medium \
   --device cuda \
   --compute-type float16 \
   --language pt
@@ -155,6 +155,27 @@ Esse arquivo inclui texto, palavras com tempo aproximado, segmentos do ASR e
 metadados do modelo. O worker ja consegue ler esse sidecar e gerar candidatos
 para a camada simbolica. Sem sidecar, a analise segue normalmente, mas a parte
 fonetico-fonologica retorna cobertura insuficiente.
+
+### ASR automático no fluxo web
+
+O worker também pode gerar esse sidecar automaticamente durante a análise web
+quando nenhum sidecar for encontrado.
+
+Variáveis principais:
+
+```text
+AUDIO_ASR_ENABLED=true
+AUDIO_ASR_MODEL=medium
+AUDIO_ASR_LANGUAGE=pt
+AUDIO_ASR_DEVICE=auto
+AUDIO_ASR_COMPUTE_TYPE=default
+```
+
+Quando ativado, o resultado de áudio inclui uma seção `transcript` e o front
+mostra a transcrição automática de forma formatada antes da revisão simbólica.
+
+Se `faster-whisper` não estiver instalado ou o ASR falhar, a análise neural
+continua funcionando; apenas a camada fonético-fonológica fica sem cobertura.
 
 ## Caminho recomendado para ASVspoof 2019 LA sem lotar a maquina
 

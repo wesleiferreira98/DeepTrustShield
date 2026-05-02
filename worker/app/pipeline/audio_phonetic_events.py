@@ -31,6 +31,54 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _event_quality_label(event: dict) -> str:
+    confidence = _safe_float(event.get("confidence"))
+    variant = str(event.get("variant") or "")
+    if variant in {"", "unknown"}:
+        return "candidate"
+    if confidence >= 0.80:
+        return "strong"
+    if confidence >= 0.70:
+        return "moderate"
+    return "weak"
+
+
+def _event_counter(events: list[dict], *keys: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for event in events:
+        label = ".".join(str(event.get(key) or "unknown") for key in keys)
+        counts[label] = counts.get(label, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def summarize_phonetic_events(events: list[dict]) -> dict:
+    classified = [
+        event
+        for event in events
+        if event.get("source") == "acoustic_transcript_candidate" and event.get("variant") != "unknown"
+    ]
+    strong = [event for event in classified if _event_quality_label(event) == "strong"]
+    moderate = [event for event in classified if _event_quality_label(event) == "moderate"]
+    weak = [event for event in classified if _event_quality_label(event) == "weak"]
+
+    return {
+        "candidate_count": len(events),
+        "classified_candidate_count": len(classified),
+        "strong_classified_count": len(strong),
+        "moderate_classified_count": len(moderate),
+        "weak_classified_count": len(weak),
+        "classified_ratio": len(classified) / float(len(events)) if events else 0.0,
+        "candidate_by_phenomenon": _event_counter(events, "phenomenon"),
+        "classified_by_phenomenon": _event_counter(classified, "phenomenon"),
+        "classified_by_variant": _event_counter(classified, "phenomenon", "variant"),
+        "average_classified_confidence": (
+            sum(_safe_float(event.get("confidence")) for event in classified) / float(len(classified))
+            if classified
+            else 0.0
+        ),
+    }
+
+
 def _strip_accents(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value)
     return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
@@ -73,6 +121,7 @@ def _phonetic_event(
         event["neural_score_local"] = float(neural_score_local)
     if extra:
         event.update(extra)
+    event["event_quality"] = _event_quality_label(event)
     return event
 
 
@@ -441,6 +490,28 @@ def _load_sidecar_by_audio_hash(audio_path: Path) -> tuple[str | None, Any | Non
     return None, None
 
 
+def _transcript_summary(data: Any, source: str | None) -> dict:
+    if not isinstance(data, dict):
+        return {
+            "available": False,
+            "source": source,
+            "text": data if isinstance(data, str) else "",
+            "word_count": 0,
+            "segment_count": 0,
+            "asr": {},
+        }
+    words = data.get("words") if isinstance(data.get("words"), list) else []
+    segments = data.get("segments") if isinstance(data.get("segments"), list) else []
+    return {
+        "available": bool(data.get("text") or words or segments),
+        "source": source,
+        "text": data.get("text") or "",
+        "word_count": len(words),
+        "segment_count": len(segments),
+        "asr": data.get("asr") or {},
+    }
+
+
 def _events_from_explicit_data(data: Any, segments: list[dict]) -> list[dict]:
     if not isinstance(data, dict) or not isinstance(data.get("phonetic_events"), list):
         return []
@@ -703,6 +774,7 @@ def extract_phonetic_events(
 
     explicit_events = _events_from_explicit_data(data, segments)
     if explicit_events:
+        event_summary = summarize_phonetic_events(explicit_events)
         return {
             "available": True,
             "status": "explicit_events",
@@ -710,6 +782,9 @@ def extract_phonetic_events(
             "events": explicit_events,
             "event_count": len(explicit_events),
             "candidate_count": len(explicit_events),
+            "classified_candidate_count": event_summary["classified_candidate_count"],
+            "event_summary": event_summary,
+            "transcript": _transcript_summary(data, sidecar_path),
             "note": "Eventos foneticos explicitos carregados do arquivo auxiliar.",
         }
 
@@ -721,11 +796,8 @@ def extract_phonetic_events(
         word_items = _word_items_from_json(data, audio_info.get("duration_seconds"))
 
     candidate_events = extract_phonetic_events_from_words(word_items, segments, waveform, sample_rate)
-    classified_count = sum(
-        1
-        for event in candidate_events
-        if event.get("source") == "acoustic_transcript_candidate" and event.get("variant") != "unknown"
-    )
+    event_summary = summarize_phonetic_events(candidate_events)
+    classified_count = event_summary["classified_candidate_count"]
     if classified_count:
         note = "Eventos candidatos foram inferidos da transcricao; alguns receberam classificacao acustica conservadora."
     elif candidate_events:
@@ -744,6 +816,8 @@ def extract_phonetic_events(
         "event_count": classified_count,
         "candidate_count": len(candidate_events),
         "classified_candidate_count": classified_count,
+        "event_summary": event_summary,
+        "transcript": _transcript_summary(data, sidecar_path),
         "word_count": len(word_items),
         "note": note,
     }

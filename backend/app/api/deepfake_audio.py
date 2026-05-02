@@ -140,7 +140,7 @@ async def analyze_audio(file: UploadFile = File(...), db: Session = Depends(get_
         "app.tasks.process_deepfake_audio",
         job_id,
         audio_path,
-        job_timeout="5m",
+        job_timeout="15m",
     )
 
     return AnalyzeResponse(

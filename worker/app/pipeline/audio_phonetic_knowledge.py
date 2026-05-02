@@ -84,6 +84,27 @@ def _valid_events(events: list[dict], min_confidence: float) -> list[dict]:
     ]
 
 
+def _classified_events(events: list[dict]) -> list[dict]:
+    return [
+        event
+        for event in events
+        if isinstance(event, dict) and str(event.get("variant") or "").lower() not in {"", "unknown"}
+    ]
+
+
+def _average_confidence(events: list[dict]) -> float:
+    if not events:
+        return 0.0
+    return sum(_event_confidence(event) for event in events) / float(len(events))
+
+
+def _phenomenon_diversity_score(events: list[dict]) -> float:
+    if not events:
+        return 0.0
+    phenomena = {str(event.get("phenomenon") or "") for event in events if event.get("phenomenon")}
+    return min(1.0, len(phenomena) / 3.0)
+
+
 def _group_events(events: list[dict], *keys: str) -> dict[tuple, list[dict]]:
     groups: dict[tuple, list[dict]] = {}
     for event in events:
@@ -179,6 +200,50 @@ def calculate_localized_disruption(events: list[dict], window_seconds: float) ->
     return min(1.0, disruptions / float(comparisons))
 
 
+def smooth_disruption_score(raw_score: float, event_count: int, min_events_for_full_weight: int = 12) -> float:
+    if event_count <= 0:
+        return 0.0
+    evidence_weight = min(1.0, event_count / float(max(1, min_events_for_full_weight)))
+    return raw_score * evidence_weight
+
+
+def calculate_evidence_quality(events: list[dict], coverage_score: float) -> dict:
+    classified = _classified_events(events)
+    total_count = len(events)
+    classified_count = len(classified)
+    avg_confidence = _average_confidence(classified)
+    classified_ratio = classified_count / float(total_count) if total_count else 0.0
+    diversity_score = _phenomenon_diversity_score(classified)
+    quality_score = coverage_score * avg_confidence * (0.60 + 0.40 * diversity_score)
+    return {
+        "total_event_count": total_count,
+        "classified_event_count": classified_count,
+        "classified_event_ratio": classified_ratio,
+        "average_confidence": avg_confidence,
+        "phenomenon_diversity_score": diversity_score,
+        "quality_score": max(0.0, min(1.0, quality_score)),
+    }
+
+
+def cap_adjustment_by_evidence(adjustment: float, event_count: int, quality_score: float) -> float:
+    """Avoid strong symbolic correction when event evidence is still thin."""
+    if adjustment == 0:
+        return 0.0
+
+    if event_count < 6 or quality_score < 0.35:
+        cap = 0.05
+    elif event_count < 10 or quality_score < 0.55:
+        cap = 0.08
+    elif event_count < 15 or quality_score < 0.70:
+        cap = 0.12
+    elif event_count < 22 or quality_score < 0.82:
+        cap = 0.16
+    else:
+        cap = 0.20
+
+    return max(-cap, min(cap, adjustment))
+
+
 def calculate_alignment_score(events: list[dict], threshold: float, peak_margin: float) -> float:
     """Estimate whether linguistic disruptions coincide with high local neural scores."""
     if not events:
@@ -234,11 +299,13 @@ def apply_phonetic_rules(
     min_confidence = _safe_float(thresholds.get("min_rule_confidence"), 0.70)
     valid_events = _valid_events(all_events, min_confidence)
     event_count, coverage_score = calculate_coverage(valid_events, thresholds)
+    evidence_quality = calculate_evidence_quality(all_events, coverage_score)
     consistency_score = calculate_phonetic_consistency(valid_events)
-    disruption_score = calculate_localized_disruption(
+    raw_disruption_score = calculate_localized_disruption(
         valid_events,
         _safe_float(thresholds.get("disruption_window_seconds"), 6.0),
     )
+    disruption_score = smooth_disruption_score(raw_disruption_score, event_count)
 
     neural_score = _safe_float(neural_result.get("p_fake"))
     threshold = _safe_float(neural_result.get("threshold"), 0.5)
@@ -260,6 +327,7 @@ def apply_phonetic_rules(
             "error": knowledge.get("error"),
             "event_count": event_count,
             "coverage_score": coverage_score,
+            "evidence_quality": evidence_quality,
             "adjustment": 0.0,
             "activated_rules": [],
             "explanations": ["A base de conhecimento fonetico-fonologica nao esta disponivel."],
@@ -282,8 +350,10 @@ def apply_phonetic_rules(
             "knowledge_path": knowledge.get("path"),
             "event_count": event_count,
             "coverage_score": coverage_score,
+            "evidence_quality": evidence_quality,
             "phonetic_consistency_score": consistency_score,
             "linguistic_plausibility_score": plausibility_score,
+            "raw_localized_disruption_score": raw_disruption_score,
             "localized_disruption_score": disruption_score,
             "alignment_score": alignment_score,
             "adjustment": 0.0,
@@ -394,6 +464,7 @@ def apply_phonetic_rules(
     adjustment = sum(_safe_float(rule.get("weight")) for rule in activated_rules)
     if coverage_score < normal_coverage_cutoff:
         adjustment *= 0.50
+    adjustment = cap_adjustment_by_evidence(adjustment, event_count, evidence_quality["quality_score"])
 
     adjustment = max(
         _safe_float(thresholds.get("max_negative_adjustment"), -0.20),
@@ -407,8 +478,10 @@ def apply_phonetic_rules(
         "knowledge_path": knowledge.get("path"),
         "event_count": event_count,
         "coverage_score": coverage_score,
+        "evidence_quality": evidence_quality,
         "phonetic_consistency_score": consistency_score,
         "linguistic_plausibility_score": plausibility_score,
+        "raw_localized_disruption_score": raw_disruption_score,
         "localized_disruption_score": disruption_score,
         "alignment_score": alignment_score,
         "adjustment": adjustment,

@@ -16,11 +16,14 @@ from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
 from app.pipeline.inference import run_inference, get_loaded_model_version
 from app.pipeline.audio_inference import run_audio_inference
+from app.pipeline.audio_asr import ensure_audio_transcript_sidecar
 from app.pipeline.audio_phonetic_events import extract_phonetic_events
 from app.pipeline.audio_symbolic import (
     combine_audio_decision,
+    diagnose_suspicious_audio_segments,
     evaluate_audio_symbolic_rules,
     extract_audio_symbolic_features,
+    generate_audio_executive_summary,
 )
 from app.db_models import Base, Job, Result, Artifact
 
@@ -164,7 +167,31 @@ def process_deepfake_audio(job_id: str, audio_path: str):
             audio_info=audio_result.get("audio_info", {}),
             segments=audio_result.get("segments", []),
         )
+        asr_summary = {}
+        if phonetic_extraction.get("status") == "no_sidecar":
+            asr_summary = ensure_audio_transcript_sidecar(
+                audio_path,
+                enabled=config.AUDIO_ASR_ENABLED,
+                model_name=config.AUDIO_ASR_MODEL,
+                language=config.AUDIO_ASR_LANGUAGE,
+                device=config.AUDIO_ASR_DEVICE,
+                compute_type=config.AUDIO_ASR_COMPUTE_TYPE,
+                beam_size=config.AUDIO_ASR_BEAM_SIZE,
+                vad_filter=config.AUDIO_ASR_VAD_FILTER,
+            )
+            if asr_summary.get("available"):
+                phonetic_extraction = extract_phonetic_events(
+                    audio_path,
+                    audio_info=audio_result.get("audio_info", {}),
+                    segments=audio_result.get("segments", []),
+                )
         audio_result["phonetic_events"] = phonetic_extraction.get("events", [])
+        audio_result["segment_diagnostics"] = diagnose_suspicious_audio_segments(
+            audio_path,
+            audio_result.get("audio_info", {}),
+            audio_result.get("segments", []),
+            threshold,
+        )
         symbolic_rules = evaluate_audio_symbolic_rules(
             audio_result,
             symbolic_features,
@@ -185,12 +212,19 @@ def process_deepfake_audio(job_id: str, audio_path: str):
                 for key, value in phonetic_extraction.items()
                 if key != "events"
             },
+            "transcript": asr_summary
+            or {
+                "available": bool(phonetic_extraction.get("transcript", {}).get("text")),
+                **(phonetic_extraction.get("transcript") or {}),
+            },
             "phonetic_events": phonetic_extraction.get("events", [])[:32],
+            "segment_diagnostics": audio_result.get("segment_diagnostics", {}),
             "symbolic": {
                 **symbolic_decision,
                 "features": symbolic_features,
             },
         }
+        audio_summary["executive_summary"] = generate_audio_executive_summary(audio_summary)
         save_artifact(db, job_id, original_meta=json.dumps({"audio_summary": audio_summary}))
         save_result(db, job_id, p_fake, risk_level, flags, model_version=audio_result["model_version"])
         update_stage(db, job_id, "done")

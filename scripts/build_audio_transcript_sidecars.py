@@ -11,7 +11,7 @@ from typing import Iterable
 
 
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".m4a", ".ogg", ".opus"}
-DEFAULT_MODEL = "small"
+DEFAULT_MODEL = "medium"
 
 
 def parse_args() -> argparse.Namespace:
