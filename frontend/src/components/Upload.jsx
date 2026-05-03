@@ -263,6 +263,7 @@ function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejecte
   const [mode, setMode] = useState('image');
   const [isDragging, setIsDragging] = useState(false);
   const [targetModel, setTargetModel] = useState('auto');
+  const [useTemporalMemory, setUseTemporalMemory] = useState(true);
   const [autoStartTried, setAutoStartTried] = useState(false);
 
   const [cameraReady, setCameraReady] = useState(false);
@@ -1286,20 +1287,20 @@ function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejecte
 
     const file = e.dataTransfer.files[0];
     if (file && mode === 'audio' && (file.type.startsWith('audio/') || /\.(flac|wav|mp3|m4a|ogg)$/i.test(file.name))) {
-      onAudioUpload(file);
+      onAudioUpload(file, { useTemporalMemory });
     } else if (file && file.type.startsWith('image/')) {
       onImageUpload(file, targetModel);
     }
-  }, [mode, onAudioUpload, onImageUpload, targetModel]);
+  }, [mode, onAudioUpload, onImageUpload, targetModel, useTemporalMemory]);
 
   const handleFileSelect = useCallback((e) => {
     const file = e.target.files[0];
     if (file && mode === 'audio') {
-      onAudioUpload(file);
+      onAudioUpload(file, { useTemporalMemory });
     } else if (file) {
       onImageUpload(file, targetModel);
     }
-  }, [mode, onAudioUpload, onImageUpload, targetModel]);
+  }, [mode, onAudioUpload, onImageUpload, targetModel, useTemporalMemory]);
 
   return (
     <div className="upload-container">
@@ -1354,6 +1355,28 @@ function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejecte
           <option value="alexnet">AlexNet (auto)</option>
         </select>
       </div>
+      )}
+
+      {mode === 'audio' && (
+        <div className="model-target-card">
+          <label htmlFor="temporal-memory-toggle">Memoria temporal simbolica</label>
+          <div className="inline-toggle-row">
+            <input
+              id="temporal-memory-toggle"
+              type="checkbox"
+              checked={useTemporalMemory}
+              onChange={(e) => setUseTemporalMemory(e.target.checked)}
+            />
+            <span title="Compara as janelas do proprio audio entre si para procurar quebras locais de comportamento neural, acustico e fonetico. Ajuda a destacar possiveis rupturas, mas nao e prova isolada de manipulacao.">
+              {useTemporalMemory
+                ? 'Ativada para procurar rupturas locais'
+                : 'Desativada nesta analise'}
+            </span>
+          </div>
+          <p className="toggle-help">
+            Ao ativar, o sistema compara trechos do proprio audio para buscar mudancas locais que destoam do restante.
+          </p>
+        </div>
       )}
 
       {mode === 'video' && (

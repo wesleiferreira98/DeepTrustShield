@@ -351,6 +351,19 @@
   fill: rgba(234, 179, 8, 0.12);
 }
 
+.audio-chart-memory-band {
+  fill: rgba(168, 85, 247, 0.12);
+  stroke: rgba(168, 85, 247, 0.62);
+  stroke-width: 1;
+}
+
+.audio-chart-ground-truth-band {
+  fill: rgba(59, 130, 246, 0.10);
+  stroke: rgba(59, 130, 246, 0.55);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
 .audio-chart-line {
   fill: none;
   stroke: var(--color-info);
@@ -428,6 +441,22 @@
   border-radius: 2px;
 }
 
+.legend-memory {
+  width: 16px;
+  height: 10px;
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.7);
+  border-radius: 2px;
+}
+
+.legend-ground-truth {
+  width: 16px;
+  height: 10px;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px dashed rgba(59, 130, 246, 0.75);
+  border-radius: 2px;
+}
+
 .legend-dot {
   width: 9px;
   height: 9px;
@@ -496,10 +525,50 @@
 }
 
 .audio-heatmap-box,
+.audio-memory-panel,
 .audio-score-ladder,
 .audio-events-visual,
 .audio-rules-panel {
   padding-top: 2px;
+}
+
+.audio-memory-panel {
+  padding: 10px;
+  background: rgba(168, 85, 247, 0.07);
+  border: 1px solid rgba(168, 85, 247, 0.22);
+  border-radius: 6px;
+}
+
+.audio-memory-panel p {
+  margin: 0 0 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.audio-memory-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.audio-memory-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  background: rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.audio-memory-list span {
+  color: var(--color-text-secondary);
+}
+
+.audio-memory-list strong {
+  color: #c084fc;
 }
 
 .audio-visual-title-row {
@@ -521,6 +590,21 @@
   white-space: nowrap;
 }
 
+.audio-inline-toggle {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.18);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.audio-inline-toggle:hover {
+  border-color: rgba(148, 163, 184, 0.42);
+  color: var(--color-text);
+}
+
 .audio-window-heatmap {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9px, 1fr));
@@ -537,6 +621,42 @@
 .audio-window-cell.warm { background: rgba(45, 212, 191, 0.34); }
 .audio-window-cell.near { background: rgba(234, 179, 8, 0.52); }
 .audio-window-cell.critical { background: rgba(239, 68, 68, 0.72); }
+.audio-window-cell.ground-truth {
+  outline: 2px solid rgba(59, 130, 246, 0.9);
+  outline-offset: 1px;
+}
+
+.audio-validation-panel {
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.07);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 6px;
+}
+
+.audio-validation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.audio-validation-grid div {
+  padding: 8px;
+  background: rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+}
+
+.audio-validation-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.audio-validation-grid strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
 
 .audio-score-row {
   display: grid;
@@ -672,7 +792,20 @@
 }
 
 .audio-rule-card strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+}
+
+.audio-rule-card small {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  line-height: 1;
 }
 
 .audio-rule-card span {
@@ -681,6 +814,17 @@
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.audio-rule-card.expanded {
+  align-items: flex-start;
+}
+
+.audio-rule-card.expanded span {
+  overflow: visible;
+  text-overflow: initial;
+  white-space: normal;
+  line-height: 1.4;
 }
 
 .audio-rule-card > b {
@@ -755,6 +899,7 @@
 
 .audio-segment-item {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 8px 10px;
@@ -763,6 +908,18 @@
   border-radius: 6px;
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+.audio-segment-item div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audio-segment-item small {
+  color: var(--color-text-secondary);
+  font-size: 11px;
 }
 
 .audio-segment-item strong {

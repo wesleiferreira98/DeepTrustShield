@@ -188,6 +188,62 @@ detector neural e as heurísticas fonéticas continuam usando o áudio original.
 Se `faster-whisper` não estiver instalado ou o ASR falhar, a análise neural
 continua funcionando; apenas a camada fonético-fonológica fica sem cobertura.
 
+## Conjunto manipulado controlado
+
+Para validar se a V1 detecta manipulações, gere audios fake controlados com
+ground truth de intervalo manipulado:
+
+```bash
+.venv/bin/python scripts/build_audio_manipulation_set.py \
+  --source-audio "audio/data/eval_external/Salvador Real Audio.ogg" \
+  --output-root audio/data/eval_manipulated/salvador_real_audio \
+  --operations remove silence duplicate splice_same volume_down volume_up pitch_up pitch_down tempo_up tempo_down \
+  --start 20 \
+  --duration 4 \
+  --overwrite
+```
+
+O mesmo script também aceita uma pasta em `--source-audio`, gerando um grupo de
+controle manipulado para todos os áudios consentidos encontrados:
+
+```bash
+.venv/bin/python scripts/build_audio_manipulation_set.py \
+  --source-audio audio/data/eval_external \
+  --output-root audio/data/eval_manipulated/eval_external_batch \
+  --operations remove silence duplicate splice_same volume_down volume_up pitch_up pitch_down tempo_up tempo_down \
+  --start 20 \
+  --duration 4 \
+  --overwrite
+```
+
+Para testar colagem de outro falante ou outra origem consentida:
+
+```bash
+.venv/bin/python scripts/build_audio_manipulation_set.py \
+  --source-audio "audio/data/eval_external/Salvador Real Audio.ogg" \
+  --insert-audio "audio/data/eval_external/Bahia interior.ogg" \
+  --output-root audio/data/eval_manipulated/salvador_splice_other \
+  --operations splice_other \
+  --start 20 \
+  --duration 4 \
+  --overwrite
+```
+
+Saidas principais:
+
+- `audio/`: audios manipulados em WAV mono 16 kHz;
+- `ground_truth/`: JSON por arquivo com `manipulated_segments`;
+- `manifest.csv`: manifesto com `audio_path`, `label`, `manipulation_type` e caminho do ground truth;
+- `summary.json`: resumo da geracao.
+
+Ao analisar esses WAVs no ambiente web, o worker deve gerar automaticamente o
+`.transcript.json` se nao encontrar transcricao existente. A busca automatica de
+sidecars considera tanto `audio/data/eval_external` quanto
+`audio/data/eval_manipulated`, alem do arquivo ao lado do audio enviado.
+
+O objetivo da avaliacao nao e apenas acertar `real/fake`; tambem e verificar se
+os picos por janela caem dentro ou perto de `manipulated_segments`.
+
 ## Caminho recomendado para ASVspoof 2019 LA sem lotar a maquina
 
 Se voce tiver a base oficial ja extraida, monte primeiro uma amostra pequena:

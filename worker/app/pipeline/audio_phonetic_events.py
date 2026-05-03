@@ -498,7 +498,10 @@ def _sidecar_search_dirs() -> list[Path]:
     raw_value = os.getenv("AUDIO_TRANSCRIPT_SIDECAR_DIRS")
     if raw_value:
         return [Path(item).expanduser().resolve() for item in raw_value.split(os.pathsep) if item.strip()]
-    return [(BASE_DIR / "audio" / "data" / "eval_external").resolve()]
+    return [
+        (BASE_DIR / "audio" / "data" / "eval_external").resolve(),
+        (BASE_DIR / "audio" / "data" / "eval_manipulated").resolve(),
+    ]
 
 
 def _load_sidecar_by_audio_hash(audio_path: Path) -> tuple[str | None, Any | None]:

@@ -3,7 +3,7 @@ import json
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from redis import Redis
 from rq import Queue
@@ -98,7 +98,11 @@ ALLOWED_AUDIO_EXTENSIONS = {".flac", ".wav", ".mp3", ".m4a", ".ogg"}
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_audio(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def analyze_audio(
+    file: UploadFile = File(...),
+    use_temporal_memory: bool = Form(True),
+    db: Session = Depends(get_db),
+):
     """Start deepfake analysis on one audio file."""
     extension = os.path.splitext(file.filename or "")[1].lower()
     if file.content_type not in ALLOWED_AUDIO_TYPES and extension not in ALLOWED_AUDIO_EXTENSIONS:
@@ -140,6 +144,7 @@ async def analyze_audio(file: UploadFile = File(...), db: Session = Depends(get_
         "app.tasks.process_deepfake_audio",
         job_id,
         audio_path,
+        use_temporal_memory,
         job_timeout="15m",
     )
 

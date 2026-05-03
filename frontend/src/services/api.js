@@ -41,9 +41,10 @@ export async function analyzeVideo(frames, targetModel = 'auto') {
   return response.json();
 }
 
-export async function analyzeAudio(file) {
+export async function analyzeAudio(file, options = {}) {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('use_temporal_memory', options.useTemporalMemory ? 'true' : 'false');
 
   const response = await fetch(`${AUDIO_API_BASE}/analyze`, {
     method: 'POST',

@@ -22,6 +22,13 @@ DEFAULT_THRESHOLDS = {
     "segment_disagreement_range": 0.35,
     "consistent_fake_ratio": 0.70,
     "isolated_fake_max_ratio": 0.35,
+    "localized_sensitivity_min_fake_ratio": 0.04,
+    "localized_sensitivity_delta": 0.05,
+    "temporal_attention_margin": 0.05,
+    "temporal_min_attention_score": 0.82,
+    "temporal_local_jump": 0.16,
+    "temporal_mad_multiplier": 2.25,
+    "temporal_symbolic_delta": 0.02,
     "domain_warning_real_seconds": 8.0,
     "moderate_silence_ratio": 0.35,
     "terminal_segment_margin_seconds": 1.0,
@@ -129,6 +136,9 @@ def _base_flags() -> dict:
         "phonetic_disruption_alert": False,
         "terminal_suspicious_segments": False,
         "possible_end_artifact": False,
+        "localized_manipulation_sensitivity": False,
+        "temporal_memory_available": False,
+        "temporal_memory_rupture_candidate": False,
     }
 
 
@@ -305,6 +315,125 @@ def _summarize_segments(segments: list[dict], threshold: float) -> dict:
     }
 
 
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+
+
+def evaluate_audio_temporal_memory(
+    audio_path: str,
+    neural_result: dict,
+    symbolic_features: dict | None = None,
+    *,
+    enabled: bool = True,
+    thresholds: dict | None = None,
+) -> dict:
+    """Compare each window with the internal behavior of the same audio."""
+    thresholds = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+    segments = neural_result.get("segments") or []
+    threshold = _safe_float(neural_result.get("threshold"), 0.5)
+    if not enabled:
+        return {"available": False, "status": "disabled", "rupture_candidates": []}
+    if len(segments) < 3:
+        return {"available": False, "status": "insufficient_segments", "rupture_candidates": []}
+
+    scores = [_safe_float(segment.get("p_fake")) for segment in segments]
+    median_score = _median(scores)
+    mad = _median([abs(score - median_score) for score in scores]) or 0.001
+    attention_threshold = max(
+        thresholds["temporal_min_attention_score"],
+        threshold - thresholds["temporal_attention_margin"],
+    )
+
+    acoustic_metrics_by_index: dict[int, dict] = {}
+    target_sample_rate = int((neural_result.get("audio_info") or {}).get("target_sample_rate") or 16000)
+    try:
+        waveform, _ = _load_mono_waveform(audio_path, target_sample_rate)
+        for index, segment in enumerate(segments):
+            start = _safe_float(segment.get("start"))
+            end = _safe_float(segment.get("end"))
+            acoustic_metrics_by_index[index] = _segment_audio_metrics(
+                _slice_waveform(waveform, target_sample_rate, start, end)
+            )
+    except Exception as exc:
+        logger.warning("Temporal memory acoustic load failed for %s: %s", audio_path, exc)
+
+    rms_values = [metrics["rms"] for metrics in acoustic_metrics_by_index.values()]
+    silence_values = [metrics["silence_ratio"] for metrics in acoustic_metrics_by_index.values()]
+    median_rms = _median(rms_values)
+    median_silence = _median(silence_values)
+
+    candidates = []
+    for index, segment in enumerate(segments):
+        score = scores[index]
+        previous_score = scores[index - 1] if index > 0 else score
+        next_score = scores[index + 1] if index < len(scores) - 1 else score
+        local_delta = max(abs(score - previous_score), abs(score - next_score))
+        z_like = abs(score - median_score) / max(mad, 0.001)
+        metrics = acoustic_metrics_by_index.get(index) or {}
+        rms_delta_ratio = abs(_safe_float(metrics.get("rms")) - median_rms) / max(median_rms, 1e-6) if metrics else 0.0
+        silence_delta = abs(_safe_float(metrics.get("silence_ratio")) - median_silence) if metrics else 0.0
+
+        reasons = []
+        if score >= attention_threshold:
+            reasons.append("near_calibrated_threshold")
+        if z_like >= thresholds["temporal_mad_multiplier"]:
+            reasons.append("score_outlier_in_audio_memory")
+        if local_delta >= thresholds["temporal_local_jump"]:
+            reasons.append("local_score_jump")
+        if rms_delta_ratio >= 0.35:
+            reasons.append("local_energy_shift")
+        if silence_delta >= 0.25:
+            reasons.append("local_silence_shift")
+
+        if "near_calibrated_threshold" in reasons and (
+            len(reasons) >= 2 or score >= threshold
+        ):
+            candidates.append(
+                {
+                    "index": int(segment.get("index", index)),
+                    "start": _safe_float(segment.get("start")),
+                    "end": _safe_float(segment.get("end")),
+                    "p_fake": score,
+                    "memory_score": min(1.0, (0.45 * (score / max(threshold, 0.001))) + (0.35 * min(1.0, z_like / 4.0)) + (0.20 * min(1.0, local_delta / 0.35))),
+                    "score_delta_from_median": score - median_score,
+                    "local_delta": local_delta,
+                    "z_like": z_like,
+                    "rms_delta_ratio": rms_delta_ratio,
+                    "silence_delta": silence_delta,
+                    "reasons": reasons,
+                }
+            )
+
+    candidates = sorted(candidates, key=lambda item: item["memory_score"], reverse=True)[:8]
+    rupture_score = max((item["memory_score"] for item in candidates), default=0.0)
+    return {
+        "available": True,
+        "status": "applied",
+        "enabled": True,
+        "attention_threshold": attention_threshold,
+        "baseline": {
+            "median_score": median_score,
+            "mad_score": mad,
+            "median_rms": median_rms,
+            "median_silence_ratio": median_silence,
+        },
+        "rupture_candidate_count": len(candidates),
+        "rupture_score": rupture_score,
+        "rupture_candidates": candidates,
+        "explanations": (
+            ["A memoria temporal encontrou janelas que destoam do comportamento interno do proprio audio."]
+            if candidates
+            else ["A memoria temporal nao encontrou ruptura local relevante."]
+        ),
+    }
+
+
 def _evaluate_regional_bias_hypothesis(symbolic_features: dict, segment_summary: dict, flags: dict) -> dict:
     duration = _safe_float(symbolic_features.get("duration_seconds"))
     silence_ratio = _safe_float(symbolic_features.get("silence_ratio"))
@@ -359,6 +488,8 @@ def evaluate_audio_symbolic_rules(
     segments = segments or neural_result.get("segments") or []
     segment_summary = _summarize_segments(segments, threshold)
     segment_diagnostics = neural_result.get("segment_diagnostics") or {}
+    temporal_memory = neural_result.get("temporal_memory") or {}
+    flags["temporal_memory_available"] = bool(temporal_memory.get("available"))
 
     if not symbolic_features.get("available", True):
         flags["feature_extraction_failed"] = True
@@ -441,8 +572,8 @@ def evaluate_audio_symbolic_rules(
         ):
             flags["isolated_suspicious_segment"] = True
             explanations.append("A suspeita se concentrou em poucos trechos, nao no audio inteiro.")
-            adjustments.append({"reason": "isolated_suspicious_segment", "delta": -0.10})
-            symbolic_score -= 0.10
+            adjustments.append({"reason": "isolated_suspicious_segment", "delta": -0.05})
+            symbolic_score -= 0.05
 
         if segment_summary["fake_ratio"] >= thresholds["consistent_fake_ratio"]:
             flags["consistent_suspicious_segments"] = True
@@ -500,6 +631,45 @@ def evaluate_audio_symbolic_rules(
             if quality_score:
                 explanations.append(f"Qualidade da evidencia fonetica: {quality_score:.2f} em uma escala de 0 a 1.")
 
+    no_phonetic_support = (
+        flags["phonetic_coverage_insufficient"]
+        or phonetic_status in {"insufficient_coverage", "no_rule_triggered", "unavailable"}
+        or not flags["phonetic_layer_available"]
+    )
+    localized_without_artifact = (
+        flags["isolated_suspicious_segment"]
+        and flags["segment_score_disagreement"]
+        and segment_summary["fake_ratio"] >= thresholds["localized_sensitivity_min_fake_ratio"]
+        and not flags["possible_end_artifact"]
+        and not flags["regional_bias_review"]
+        and not flags["phonetic_consistency_support"]
+    )
+    if localized_without_artifact and no_phonetic_support:
+        flags["localized_manipulation_sensitivity"] = True
+        explanations.append(
+            "A suspeita localizada permaneceu sem evidencia fonetica suficiente para reduzir o alerta."
+        )
+        delta = thresholds["localized_sensitivity_delta"]
+        adjustments.append({"reason": "localized_manipulation_sensitivity", "delta": delta})
+        symbolic_score += delta
+
+    temporal_candidates = temporal_memory.get("rupture_candidates") or []
+    if temporal_candidates:
+        flags["temporal_memory_rupture_candidate"] = True
+        explanations.append(
+            "A memoria temporal encontrou janela(s) que destoam do comportamento interno do audio."
+        )
+        if (
+            segment_summary["fake_count"] == 0
+            and no_phonetic_support
+            and not flags["phonetic_consistency_support"]
+            and not flags["possible_end_artifact"]
+            and not flags["regional_bias_review"]
+        ):
+            delta = thresholds["temporal_symbolic_delta"]
+            adjustments.append({"reason": "temporal_memory_rupture_candidate", "delta": delta})
+            symbolic_score += delta
+
     symbolic_score = max(0.0, min(1.0, symbolic_score))
     active_quality_flags = [
         flags["short_audio"],
@@ -520,6 +690,7 @@ def evaluate_audio_symbolic_rules(
         or flags["isolated_suspicious_segment"]
         or flags["terminal_suspicious_segments"]
         or flags["phonetic_coverage_insufficient"]
+        or flags["temporal_memory_rupture_candidate"]
         or any(active_quality_flags)
     ):
         confidence = "moderate"
@@ -545,6 +716,7 @@ def evaluate_audio_symbolic_rules(
         "segment_diagnostics": segment_diagnostics,
         "regional_bias_review": regional_bias_review,
         "phonetic_review": phonetic_review,
+        "temporal_memory": temporal_memory,
         "thresholds": thresholds,
     }
 
@@ -599,6 +771,7 @@ def combine_audio_decision(neural_result: dict, symbolic_result: dict) -> dict:
         "segment_diagnostics": symbolic_result.get("segment_diagnostics", {}),
         "regional_bias_review": symbolic_result.get("regional_bias_review", {}),
         "phonetic_review": symbolic_result.get("phonetic_review", {}),
+        "temporal_memory": symbolic_result.get("temporal_memory", {}),
     }
 
 
@@ -612,6 +785,8 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
     segment_diagnostics = symbolic.get("segment_diagnostics") or audio_summary.get("segment_diagnostics") or {}
     diagnostic_summary = segment_diagnostics.get("summary") or {}
     phonetic_review = symbolic.get("phonetic_review") or {}
+    temporal_memory = symbolic.get("temporal_memory") or audio_summary.get("temporal_memory") or {}
+    ground_truth = audio_summary.get("ground_truth") or {}
     flags = symbolic.get("flags") or {}
 
     decision_labels = {
@@ -660,8 +835,14 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
             lines.append(
                 f"A suspeita neural ficou concentrada em {fake_count} de {count} janelas, principalmente no final do áudio."
             )
+            lines.append(
+                "Essas janelas são tratadas como indício de possível ruptura localizada, não como prova isolada de manipulação."
+            )
         elif fake_ratio <= DEFAULT_THRESHOLDS["isolated_fake_max_ratio"]:
             lines.append(f"A suspeita neural ficou concentrada em poucos trechos: {fake_count} de {count} janelas.")
+            lines.append(
+                "Essas janelas são tratadas como indício de possível ruptura localizada, não como prova isolada de manipulação."
+            )
         else:
             lines.append(f"{fake_count} de {count} janelas ficaram acima do limite calibrado.")
 
@@ -695,11 +876,23 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
         else:
             lines.append("Os picos finais não parecem ser explicados apenas por silêncio, clipping ou salto brusco de volume.")
 
+    if temporal_memory.get("rupture_candidate_count", 0) > 0:
+        lines.append(
+            "A memória temporal encontrou trecho(s) que destoam do comportamento interno do próprio áudio."
+        )
+
+    if ground_truth.get("available"):
+        overlap = ground_truth.get("overlap") or {}
+        if overlap.get("localized_hit"):
+            lines.append("No teste controlado, os picos detectados coincidiram com o trecho manipulado.")
+        else:
+            lines.append("No teste controlado, os picos detectados não coincidiram claramente com o trecho manipulado.")
+
     if decision in {"inconclusive", "suspicious_segment"} or flags.get("terminal_suspicious_segments"):
         if flags.get("terminal_suspicious_segments"):
-            recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos finais para análise contextual."
+            recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos finais como possível ruptura para análise contextual."
         else:
-            recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos suspeitos para análise contextual."
+            recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos suspeitos como possível ruptura para análise contextual."
     elif decision == "fake":
         recommendation = "O sistema mantém a classificação como suspeita e prioriza os trechos com maior score para explicação automática."
     elif decision == "real":

@@ -32,6 +32,7 @@ function Result({
   reanalysisError = null,
 }) {
   const [selectedModel, setSelectedModel] = useState('auto');
+  const [rulesExpanded, setRulesExpanded] = useState(false);
 
   const getRiskConfig = (level, pFake) => {
     const percent = pFake !== null ? pFake * 100 : null;
@@ -94,6 +95,8 @@ function Result({
   const audioPhoneticEvents = Array.isArray(result.audio_summary?.phonetic_events)
     ? result.audio_summary.phonetic_events
     : [];
+  const audioGroundTruth = result.audio_summary?.ground_truth || null;
+  const audioTemporalMemory = audioSymbolic?.temporal_memory || result.audio_summary?.temporal_memory || null;
   const audioTimeline = useMemo(() => {
     if (!audioSegments.length) {
       return null;
@@ -118,6 +121,12 @@ function Result({
       })
       .join(' ');
     const suspiciousSegments = audioSegments.filter((segment) => (Number(segment.p_fake) || 0) >= threshold);
+    const groundTruthSegments = audioGroundTruth?.available && Array.isArray(audioGroundTruth.manipulated_segments)
+      ? audioGroundTruth.manipulated_segments
+      : [];
+    const memorySegments = audioTemporalMemory?.available && Array.isArray(audioTemporalMemory.rupture_candidates)
+      ? audioTemporalMemory.rupture_candidates
+      : [];
     const reliableEvents = audioPhoneticEvents.filter((event) => (
       event.event_quality === 'strong' || event.event_quality === 'moderate'
     ));
@@ -139,12 +148,14 @@ function Result({
       xForTime,
       yForScore,
       suspiciousSegments,
+      groundTruthSegments,
+      memorySegments,
       reliableEvents,
       eventCounts,
       maxScore: Math.max(...audioSegments.map((segment) => Number(segment.p_fake) || 0)),
       minScore: Math.min(...audioSegments.map((segment) => Number(segment.p_fake) || 0)),
     };
-  }, [audioSegments, audioPhoneticEvents, result.audio_summary]);
+  }, [audioSegments, audioPhoneticEvents, audioGroundTruth, audioTemporalMemory, result.audio_summary]);
   const activeAudioFlags = Object.entries(audioSymbolic?.flags || {})
     .filter(([_, value]) => value)
     .map(([key]) => key);
@@ -180,6 +191,9 @@ function Result({
     phonetic_disruption_alert: 'Ruptura fonetica',
     terminal_suspicious_segments: 'Pico no final',
     possible_end_artifact: 'Possivel artefato final',
+    localized_manipulation_sensitivity: 'Sensibilidade localizada',
+    temporal_memory_available: 'Memoria temporal',
+    temporal_memory_rupture_candidate: 'Variacao temporal',
   };
 
   const confidenceLabels = {
@@ -192,6 +206,28 @@ function Result({
     rotic_coda: '/r/ final',
     s_coda: '/s/ coda',
     td_before_i: '/t,d/ + i',
+  };
+  const ruleLabels = {
+    R1: 'Apagamento de /r/ final em infinitivos',
+    R2: 'Alternancia de /r/ sem ruptura clara',
+    R3: 'Mudanca abrupta de /r/ no mesmo contexto',
+    R4: 'Apagamento isolado de /r/ interno',
+    R5: 'Variante dominante estavel',
+    S1: '/s/ palatal recorrente e sistematico',
+    S2: '/s/ alveolar recorrente e sistematico',
+    S3: 'Troca abrupta entre /s/ alveolar e palatal',
+    S4: 'Palatalizacao em contexto favorecedor',
+    S5: 'Baixa palatalizacao diante de pausa',
+    TD1: 'Palatalizacao de /t,d/ diante de i',
+    TD2: 'Realizacao dentoalveolar estavel',
+    TD3: 'Alternancia abrupta de /t,d/ diante de i',
+    TD4: 'Palatalizacao apos contexto palatal',
+    G1: 'Multiplos fenomenos estaveis',
+    G2: 'Multiplos fenomenos mudaram no mesmo intervalo',
+    G3: 'Cobertura linguistica insuficiente',
+    G4: 'Qualidade de audio ou alinhamento baixa',
+    G5: 'Score neural alto com consistencia linguistica',
+    G6: 'Ruptura linguistica alinhada ao pico neural',
   };
   const audioVisualSummary = useMemo(() => {
     const phoneticReview = audioSymbolic?.phonetic_review || null;
@@ -235,6 +271,15 @@ function Result({
     const maxPhenomenonCount = Math.max(1, ...Object.values(phenomenonCounts).map((value) => Number(value) || 0));
     const maxClassifiedCount = Math.max(1, ...Object.values(classifiedCounts).map((value) => Number(value) || 0));
     const rules = Array.isArray(phoneticReview?.activated_rules) ? phoneticReview.activated_rules : [];
+    const validation = result.audio_summary?.ground_truth?.available
+      ? {
+          manipulationType: result.audio_summary.ground_truth.manipulation_type,
+          manipulationMethod: result.audio_summary.ground_truth.manipulation_method,
+          overlap: result.audio_summary.ground_truth.overlap || {},
+          segments: result.audio_summary.ground_truth.manipulated_segments || [],
+        }
+      : null;
+    const temporalMemory = audioSymbolic?.temporal_memory || result.audio_summary?.temporal_memory || null;
 
     return {
       phoneticReview,
@@ -247,6 +292,8 @@ function Result({
       maxPhenomenonCount,
       maxClassifiedCount,
       rules,
+      validation,
+      temporalMemory,
     };
   }, [audioSymbolic, result.audio_summary]);
 
@@ -506,6 +553,25 @@ function Result({
                 limite {(audioTimeline.threshold * 100).toFixed(1)}%
               </text>
 
+              {audioTimeline.groundTruthSegments.map((segment, index) => {
+                const x = audioTimeline.xForTime(Number(segment.start) || 0);
+                const endX = audioTimeline.xForTime(Number(segment.end) || 0);
+                return (
+                  <rect
+                    key={`gt-${index}-${segment.start}`}
+                    x={x}
+                    y={audioTimeline.padding.top}
+                    width={Math.max(2, endX - x)}
+                    height={audioTimeline.plotHeight}
+                    className="audio-chart-ground-truth-band"
+                  >
+                    <title>
+                      {`Trecho manipulado: ${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s`}
+                    </title>
+                  </rect>
+                );
+              })}
+
               {audioTimeline.suspiciousSegments.map((segment) => {
                 const x = audioTimeline.xForTime(Number(segment.start) || 0);
                 const endX = audioTimeline.xForTime(Number(segment.end) || 0);
@@ -520,6 +586,25 @@ function Result({
                   >
                     <title>
                       {`${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s · ${((Number(segment.p_fake) || 0) * 100).toFixed(1)}%`}
+                    </title>
+                  </rect>
+                );
+              })}
+
+              {audioTimeline.memorySegments.map((segment) => {
+                const x = audioTimeline.xForTime(Number(segment.start) || 0);
+                const endX = audioTimeline.xForTime(Number(segment.end) || 0);
+                return (
+                  <rect
+                    key={`mem-${segment.index}-${segment.start}`}
+                    x={x}
+                    y={audioTimeline.padding.top}
+                    width={Math.max(2, endX - x)}
+                    height={audioTimeline.plotHeight}
+                    className="audio-chart-memory-band"
+                  >
+                    <title>
+                      {`Memoria temporal: ${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s · ${(Number(segment.memory_score || segment.p_fake || 0) * 100).toFixed(1)}%`}
                     </title>
                   </rect>
                 );
@@ -587,6 +672,12 @@ function Result({
             <div className="audio-timeline-legend">
               <span><i className="legend-line" />Score neural</span>
               <span><i className="legend-band" />Acima do limite</span>
+              {audioTimeline.memorySegments.length > 0 && (
+                <span><i className="legend-memory" />Variacao temporal</span>
+              )}
+              {audioTimeline.groundTruthSegments.length > 0 && (
+                <span><i className="legend-ground-truth" />Trecho manipulado</span>
+              )}
               <span><i className="legend-dot rotic_coda" />/r/ final {audioTimeline.eventCounts.rotic_coda || 0}</span>
               <span><i className="legend-dot s_coda" />/s/ coda {audioTimeline.eventCounts.s_coda || 0}</span>
               <span><i className="legend-dot td_before_i" />/t,d/ + i {audioTimeline.eventCounts.td_before_i || 0}</span>
@@ -625,6 +716,10 @@ function Result({
                   {audioSegments.map((segment) => {
                     const score = Number(segment.p_fake) || 0;
                     const threshold = audioVisualSummary.threshold ?? 0.5;
+                    const hasGroundTruthOverlap = audioTimeline?.groundTruthSegments?.some((truth) => (
+                      Math.max(Number(segment.start) || 0, Number(truth.start) || 0)
+                      < Math.min(Number(segment.end) || 0, Number(truth.end) || 0)
+                    ));
                     const heatClass = score >= threshold
                       ? 'critical'
                       : score >= Math.max(0, threshold - 0.08)
@@ -635,12 +730,70 @@ function Result({
                     return (
                       <span
                         key={`heat-${segment.index}-${segment.start}`}
-                        className={`audio-window-cell ${heatClass}`}
+                        className={`audio-window-cell ${heatClass}${hasGroundTruthOverlap ? ' ground-truth' : ''}`}
                         title={`Janela ${segment.index}: ${(Number(segment.start) || 0).toFixed(1)}s - ${(Number(segment.end) || 0).toFixed(1)}s · ${(score * 100).toFixed(1)}%`}
                       />
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {audioVisualSummary.validation && (
+              <div className="audio-validation-panel">
+                <div className="audio-visual-title-row">
+                  <h3>Validacao controlada</h3>
+                  <span>{audioVisualSummary.validation.manipulationType || 'manipulacao'}</span>
+                </div>
+                <div className="audio-validation-grid">
+                  <div>
+                    <span>Coincidencia com pico</span>
+                    <strong>
+                      {audioVisualSummary.validation.overlap.localized_hit
+                        ? `Detectada${audioVisualSummary.validation.overlap.localized_hit_source === 'memory' ? ' pela memoria' : ''}`
+                        : 'Nao clara'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Cobertura do trecho</span>
+                    <strong>
+                      {((Number(audioVisualSummary.validation.overlap.manipulated_overlap_ratio) || 0) * 100).toFixed(0)}%
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Picos / memoria</span>
+                    <strong>
+                      {audioVisualSummary.validation.overlap.suspicious_count || 0}
+                      {' / '}
+                      {audioVisualSummary.validation.overlap.memory_candidate_count || 0}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {audioVisualSummary.temporalMemory?.available && (
+              <div className="audio-memory-panel">
+                <div className="audio-visual-title-row">
+                  <h3>Memoria temporal</h3>
+                  <span>{audioVisualSummary.temporalMemory.rupture_candidate_count || 0} candidato(s)</span>
+                </div>
+                <p>
+                  {audioVisualSummary.temporalMemory.rupture_candidate_count > 0
+                    ? 'Foram encontrados trechos que destoam do comportamento interno do proprio audio.'
+                    : 'Nenhuma variacao temporal relevante foi encontrada.'}
+                </p>
+                {Array.isArray(audioVisualSummary.temporalMemory.rupture_candidates)
+                  && audioVisualSummary.temporalMemory.rupture_candidates.length > 0 && (
+                  <div className="audio-memory-list">
+                    {audioVisualSummary.temporalMemory.rupture_candidates.slice(0, 4).map((candidate) => (
+                      <div key={`memory-${candidate.index}-${candidate.start}`}>
+                        <span>{(Number(candidate.start) || 0).toFixed(1)}s - {(Number(candidate.end) || 0).toFixed(1)}s</span>
+                        <strong>{((Number(candidate.memory_score) || 0) * 100).toFixed(0)}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -709,17 +862,27 @@ function Result({
               <div className="audio-rules-panel">
                 <div className="audio-visual-title-row">
                   <h3>Regras ativadas</h3>
-                  <span>{audioVisualSummary.rules.length} regra(s)</span>
+                  <button
+                    type="button"
+                    className="audio-inline-toggle"
+                    onClick={() => setRulesExpanded((current) => !current)}
+                  >
+                    {rulesExpanded ? 'Recolher' : `Expandir ${audioVisualSummary.rules.length} regra(s)`}
+                  </button>
                 </div>
                 <div className="audio-rule-list">
                   {audioVisualSummary.rules.map((rule) => {
                     const weight = Number(rule.weight) || 0;
                     const polarity = weight < 0 ? 'reduce' : weight > 0 ? 'increase' : 'neutral';
+                    const friendlyLabel = ruleLabels[rule.rule_id] || rule.condition;
                     return (
-                      <div key={`${rule.rule_id}-${rule.condition}`} className={`audio-rule-card ${polarity}`}>
+                      <div
+                        key={`${rule.rule_id}-${rule.condition}`}
+                        className={`audio-rule-card ${polarity}${rulesExpanded ? ' expanded' : ''}`}
+                      >
                         <div>
-                          <strong>{rule.rule_id}</strong>
-                          <span>{rule.condition}</span>
+                          <strong><small>{rule.rule_id}</small>{friendlyLabel}</strong>
+                          <span>{rule.explanation || rule.condition}</span>
                         </div>
                         <b>{weight > 0 ? '+' : ''}{weight.toFixed(2)}</b>
                       </div>
@@ -794,7 +957,10 @@ function Result({
               <div className="audio-segments-list">
                 {audioSegmentSummary.suspicious_segments.slice(0, 4).map((segment) => (
                   <div key={`${segment.index}-${segment.start}`} className="audio-segment-item">
-                    <span>{segment.start.toFixed(1)}s - {segment.end.toFixed(1)}s</span>
+                    <div>
+                      <span>{segment.start.toFixed(1)}s - {segment.end.toFixed(1)}s</span>
+                      <small>Possível ruptura localizada no áudio</small>
+                    </div>
                     <strong>{(segment.p_fake * 100).toFixed(1)}%</strong>
                   </div>
                 ))}

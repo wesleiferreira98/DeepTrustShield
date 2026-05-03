@@ -17,11 +17,13 @@ from app.pipeline.preprocessing import preprocess_face
 from app.pipeline.inference import run_inference, get_loaded_model_version
 from app.pipeline.audio_inference import run_audio_inference
 from app.pipeline.audio_asr import ensure_audio_transcript_sidecar
+from app.pipeline.audio_ground_truth import load_audio_manipulation_ground_truth
 from app.pipeline.audio_phonetic_events import extract_phonetic_events
 from app.pipeline.audio_symbolic import (
     combine_audio_decision,
     diagnose_suspicious_audio_segments,
     evaluate_audio_symbolic_rules,
+    evaluate_audio_temporal_memory,
     extract_audio_symbolic_features,
     generate_audio_executive_summary,
 )
@@ -133,7 +135,7 @@ def calculate_audio_risk_level(p_fake: float, threshold: float) -> str:
     return "high"
 
 
-def process_deepfake_audio(job_id: str, audio_path: str):
+def process_deepfake_audio(job_id: str, audio_path: str, use_temporal_memory: bool = True):
     """Pipeline for deepfake detection from one audio file."""
     db = get_db()
     start_time = time.time()
@@ -193,6 +195,19 @@ def process_deepfake_audio(job_id: str, audio_path: str):
             audio_result.get("segments", []),
             threshold,
         )
+        temporal_memory = evaluate_audio_temporal_memory(
+            audio_path,
+            audio_result,
+            symbolic_features,
+            enabled=bool(use_temporal_memory),
+        )
+        audio_result["temporal_memory"] = temporal_memory
+        ground_truth = load_audio_manipulation_ground_truth(
+            audio_path,
+            audio_result.get("segments", []),
+            threshold,
+            temporal_memory.get("rupture_candidates", []),
+        )
         symbolic_rules = evaluate_audio_symbolic_rules(
             audio_result,
             symbolic_features,
@@ -220,6 +235,12 @@ def process_deepfake_audio(job_id: str, audio_path: str):
             },
             "phonetic_events": phonetic_extraction.get("events", [])[:32],
             "segment_diagnostics": audio_result.get("segment_diagnostics", {}),
+            "temporal_memory": temporal_memory,
+            "ground_truth": ground_truth,
+            "analysis_options": {
+                "temporal_memory_enabled": bool(use_temporal_memory),
+                "temporal_memory_status": temporal_memory.get("status") or ("disabled" if not use_temporal_memory else "unavailable"),
+            },
             "symbolic": {
                 **symbolic_decision,
                 "features": symbolic_features,
