@@ -15,6 +15,7 @@ _audio_device = None
 _audio_model_version = None
 _audio_threshold = 0.5
 _audio_args = {}
+_audio_model_cache = {}
 MAX_SEGMENTS = 32
 
 
@@ -44,6 +45,66 @@ class AudioCNN(nn.Module):
         return self.classifier(x).squeeze(-1)
 
 
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, *, stride: int = 1, dropout: float = 0.0) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(dropout) if dropout > 0 else nn.Identity(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+        )
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+        else:
+            self.shortcut = nn.Identity()
+        self.activation = nn.ReLU(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.activation(self.block(x) + self.shortcut(x))
+
+
+class AudioResNetSmall(nn.Module):
+    def __init__(self, n_mels: int, *, dropout: float = 0.20) -> None:
+        super().__init__()
+        self.stem = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+        )
+        self.features = nn.Sequential(
+            ResidualBlock(32, 32, dropout=dropout * 0.5),
+            ResidualBlock(32, 64, stride=2, dropout=dropout * 0.5),
+            ResidualBlock(64, 64, dropout=dropout * 0.5),
+            ResidualBlock(64, 128, stride=2, dropout=dropout),
+            ResidualBlock(128, 128, dropout=dropout),
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout),
+            nn.Linear(128, 1),
+        )
+        self.n_mels = n_mels
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.stem(x)
+        x = self.features(x)
+        return self.classifier(x).squeeze(-1)
+
+
+def build_audio_model(architecture: str, n_mels: int, *, dropout: float) -> nn.Module:
+    if architecture == "resnet_small":
+        return AudioResNetSmall(n_mels=n_mels, dropout=dropout)
+    return AudioCNN(n_mels=n_mels)
+
+
 def get_audio_device():
     global _audio_device
     if _audio_device is None:
@@ -71,23 +132,38 @@ def _summary_threshold(summary: dict) -> float | None:
     return None
 
 
+def _first_present(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def load_audio_model(model_path: str, summary_path: str | None = None):
     global _audio_model, _audio_args, _audio_model_version, _audio_threshold
-
-    if _audio_model is not None:
-        return _audio_model
 
     model_file = Path(model_path)
     if not model_file.exists():
         raise FileNotFoundError(f"Modelo de audio nao encontrado: {model_file}")
 
     device = get_audio_device()
+    cache_key = (str(model_file.resolve()), str(Path(summary_path).resolve()) if summary_path else "")
+    if cache_key in _audio_model_cache:
+        cached = _audio_model_cache[cache_key]
+        _audio_model = cached["model"]
+        _audio_args = cached["args"]
+        _audio_model_version = cached["version"]
+        _audio_threshold = cached["threshold"]
+        return _audio_model
+
     checkpoint = torch.load(str(model_file), map_location=device, weights_only=False)
     args = checkpoint.get("args", {}) if isinstance(checkpoint, dict) else {}
 
     summary = _load_summary(summary_path or str(model_file.with_name("summary.json")))
-    n_mels = int(args.get("n_mels") or summary.get("n_mels") or 80)
-    model = AudioCNN(n_mels=n_mels)
+    n_mels = int(_first_present(args.get("n_mels"), summary.get("n_mels"), 80))
+    architecture = _first_present(args.get("architecture"), summary.get("architecture"), "cnn")
+    dropout = float(_first_present(args.get("dropout"), summary.get("dropout"), 0.20))
+    model = build_audio_model(str(architecture), n_mels=n_mels, dropout=dropout)
 
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -99,15 +175,22 @@ def load_audio_model(model_path: str, summary_path: str | None = None):
         _audio_threshold = threshold
 
     _audio_args = {
-        "sample_rate": int(args.get("sample_rate") or summary.get("sample_rate") or 16000),
-        "clip_seconds": float(args.get("clip_seconds") or summary.get("clip_seconds") or 4.0),
+        "sample_rate": int(_first_present(args.get("sample_rate"), summary.get("sample_rate"), 16000)),
+        "clip_seconds": float(_first_present(args.get("clip_seconds"), summary.get("clip_seconds"), 4.0)),
         "n_mels": n_mels,
+        "architecture": str(architecture),
     }
     _audio_model_version = summary.get("model_version") or "audio_deepfake_v1"
 
     model = model.to(device)
     model.eval()
     _audio_model = model
+    _audio_model_cache[cache_key] = {
+        "model": model,
+        "args": dict(_audio_args),
+        "version": _audio_model_version,
+        "threshold": _audio_threshold,
+    }
 
     logger.info(
         "Loaded audio model %s from %s with threshold %.4f",

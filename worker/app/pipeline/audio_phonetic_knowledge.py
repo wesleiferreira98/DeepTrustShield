@@ -421,8 +421,9 @@ def apply_phonetic_rules(
         threshold=threshold,
         peak_margin=peak_margin,
     )
-    raw_disruption_score = disruption_details["aligned_score"]
-    disruption_score = smooth_disruption_score(raw_disruption_score, event_count)
+    raw_disruption_score = disruption_details["raw_score"]
+    aligned_disruption_score = disruption_details["aligned_score"]
+    disruption_score = smooth_disruption_score(aligned_disruption_score, event_count)
 
     alignment_score = calculate_alignment_score(
         valid_events,
@@ -619,6 +620,7 @@ def apply_phonetic_rules(
         "phonetic_consistency_score": consistency_score,
         "linguistic_plausibility_score": plausibility_score,
         "raw_localized_disruption_score": raw_disruption_score,
+        "aligned_localized_disruption_score": aligned_disruption_score,
         "localized_disruption_score": disruption_score,
         "localized_disruption": disruption_details,
         "alignment_score": alignment_score,

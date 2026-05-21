@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,6 +22,29 @@ class Config:
         "AUDIO_MODEL_SUMMARY_PATH",
         f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json",
     )
+    AUDIO_MODEL_REGISTRY_JSON = os.getenv("AUDIO_MODEL_REGISTRY", "")
+    AUDIO_MODEL_REGISTRY = {
+        "default": {
+            "label": "FakeBrAccent codec equalizado",
+            "path": AUDIO_MODEL_PATH,
+            "summary_path": AUDIO_MODEL_SUMMARY_PATH,
+        },
+        "fake_braccent_codec": {
+            "label": "FakeBrAccent codec equalizado",
+            "path": f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth",
+            "summary_path": f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json",
+        },
+        "brspeech_sample": {
+            "label": "BRSpeech-DF amostra (experimental)",
+            "path": f"{BASE_DIR}/audio/models/audio_deepfake_v1_brspeech_sample/audio_deepfake_v1_best.pth",
+            "summary_path": f"{BASE_DIR}/audio/models/audio_deepfake_v1_brspeech_sample/summary.json",
+        },
+    }
+    if AUDIO_MODEL_REGISTRY_JSON:
+        try:
+            AUDIO_MODEL_REGISTRY.update(json.loads(AUDIO_MODEL_REGISTRY_JSON))
+        except Exception:
+            pass
     
     # Thresholds
     THRESHOLD_LOW = 0.50  # Abaixo de 50% = baixo risco (provavelmente real)
@@ -43,3 +67,16 @@ class Config:
 
 
 config = Config()
+
+
+def get_audio_model_config(target_model: str | None = None) -> dict:
+    key = (target_model or "default").strip() or "default"
+    if key == "auto":
+        key = "default"
+    model_config = config.AUDIO_MODEL_REGISTRY.get(key) or config.AUDIO_MODEL_REGISTRY["default"]
+    return {
+        "key": key if key in config.AUDIO_MODEL_REGISTRY else "default",
+        "label": model_config.get("label") or key,
+        "path": model_config.get("path") or config.AUDIO_MODEL_PATH,
+        "summary_path": model_config.get("summary_path") or config.AUDIO_MODEL_SUMMARY_PATH,
+    }

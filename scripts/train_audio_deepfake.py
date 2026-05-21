@@ -36,6 +36,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--dropout", type=float, default=0.20)
+    parser.add_argument("--architecture", choices=("cnn", "resnet_small"), default="cnn")
     parser.add_argument(
         "--pos-weight",
         default="auto",
@@ -48,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--val-split", default="val")
     parser.add_argument("--test-split", default="test")
+    parser.add_argument("--attention-min-recall", type=float, default=0.90)
     return parser.parse_args()
 
 
@@ -96,6 +100,12 @@ def load_manifest(path: Path) -> list[dict]:
                     "source": row.get("source", ""),
                     "accent": row.get("accent", "unknown") or "unknown",
                     "speaker_id": row.get("speaker_id", "unknown") or "unknown",
+                    "start": row.get("start", ""),
+                    "end": row.get("end", ""),
+                    "file_label": row.get("file_label", label_text) or label_text,
+                    "manipulation_type": row.get("manipulation_type", "none") or "none",
+                    "overlap_ratio": row.get("overlap_ratio", ""),
+                    "ground_truth_path": row.get("ground_truth_path", ""),
                 }
             )
     return rows
@@ -133,10 +143,26 @@ class AudioDeepfakeDataset(Dataset):
             waveform = self.resamplers[source_rate](waveform)
         return waveform
 
-    def _pad_or_crop(self, waveform: torch.Tensor) -> torch.Tensor:
+    def _window_from_row(self, waveform: torch.Tensor, row: dict) -> torch.Tensor:
+        try:
+            start_seconds = float(row.get("start"))
+            end_seconds = float(row.get("end"))
+        except (TypeError, ValueError):
+            return self._pad_or_crop(waveform)
+
+        if end_seconds <= start_seconds:
+            return self._pad_or_crop(waveform)
+
+        start_sample = max(0, int(round(start_seconds * self.sample_rate)))
+        end_sample = min(waveform.size(-1), int(round(end_seconds * self.sample_rate)))
+        window = waveform[:, start_sample:end_sample]
+        return self._pad_or_crop(window, random_crop=False)
+
+    def _pad_or_crop(self, waveform: torch.Tensor, random_crop: bool | None = None) -> torch.Tensor:
+        random_crop = self.random_crop if random_crop is None else random_crop
         length = waveform.size(-1)
         if length > self.num_samples:
-            if self.random_crop:
+            if random_crop:
                 start = random.randint(0, length - self.num_samples)
             else:
                 start = max((length - self.num_samples) // 2, 0)
@@ -149,7 +175,7 @@ class AudioDeepfakeDataset(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         row = self.rows[index]
         waveform = self._load_waveform(row["audio_path"])
-        waveform = self._pad_or_crop(waveform)
+        waveform = self._window_from_row(waveform, row)
         features = self.amplitude_to_db(self.mel_transform(waveform)).clamp(min=-80.0, max=0.0)
         features = (features + 80.0) / 80.0
         return features, torch.tensor(float(row["label"]), dtype=torch.float32)
@@ -179,6 +205,66 @@ class AudioCNN(nn.Module):
         x = self.features(x)
         x = torch.flatten(x, 1)
         return self.classifier(x).squeeze(-1)
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, *, stride: int = 1, dropout: float = 0.0) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(dropout) if dropout > 0 else nn.Identity(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+        )
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+        else:
+            self.shortcut = nn.Identity()
+        self.activation = nn.ReLU(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.activation(self.block(x) + self.shortcut(x))
+
+
+class AudioResNetSmall(nn.Module):
+    def __init__(self, n_mels: int, *, dropout: float = 0.20) -> None:
+        super().__init__()
+        self.stem = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+        )
+        self.features = nn.Sequential(
+            ResidualBlock(32, 32, dropout=dropout * 0.5),
+            ResidualBlock(32, 64, stride=2, dropout=dropout * 0.5),
+            ResidualBlock(64, 64, dropout=dropout * 0.5),
+            ResidualBlock(64, 128, stride=2, dropout=dropout),
+            ResidualBlock(128, 128, dropout=dropout),
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout),
+            nn.Linear(128, 1),
+        )
+        self.n_mels = n_mels
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.stem(x)
+        x = self.features(x)
+        return self.classifier(x).squeeze(-1)
+
+
+def build_model(architecture: str, n_mels: int, *, dropout: float) -> nn.Module:
+    if architecture == "resnet_small":
+        return AudioResNetSmall(n_mels=n_mels, dropout=dropout)
+    return AudioCNN(n_mels=n_mels)
 
 
 def count_labels(rows: list[dict]) -> dict[str, int]:
@@ -239,6 +325,93 @@ def find_best_threshold(
         if is_better:
             best = {"threshold": float(threshold), **metrics}
     return best
+
+
+def find_attention_threshold(labels: list[int], probs: list[float], *, min_recall: float = 0.90) -> dict[str, float]:
+    if not labels or not probs:
+        return {"threshold": 0.5, "recall_fake": 0.0, "false_positive_rate": 0.0}
+
+    candidates = sorted(set(float(prob) for prob in probs))
+    candidates = [0.0, *candidates, 1.0]
+    fake_count = max(sum(1 for label in labels if label == 1), 1)
+    real_count = max(sum(1 for label in labels if label == 0), 1)
+    feasible = []
+    for threshold in candidates:
+        true_positive = sum(1 for label, prob in zip(labels, probs) if label == 1 and prob >= threshold)
+        false_positive = sum(1 for label, prob in zip(labels, probs) if label == 0 and prob >= threshold)
+        recall_fake = true_positive / fake_count
+        false_positive_rate = false_positive / real_count
+        item = {
+            "threshold": float(threshold),
+            "recall_fake": float(recall_fake),
+            "false_positive_rate": float(false_positive_rate),
+        }
+        if recall_fake >= min_recall:
+            feasible.append(item)
+
+    if feasible:
+        return sorted(feasible, key=lambda item: (item["false_positive_rate"], -item["threshold"]))[0]
+
+    return max(
+        (
+            {
+                "threshold": float(threshold),
+                "recall_fake": sum(1 for label, prob in zip(labels, probs) if label == 1 and prob >= threshold) / fake_count,
+                "false_positive_rate": sum(1 for label, prob in zip(labels, probs) if label == 0 and prob >= threshold) / real_count,
+            }
+            for threshold in candidates
+        ),
+        key=lambda item: (item["recall_fake"], -item["false_positive_rate"]),
+    )
+
+
+def aggregate_file_predictions(rows: list[dict], labels: list[int], probs: list[float]) -> dict[str, dict]:
+    grouped: dict[str, dict] = {}
+    for row, label, prob in zip(rows, labels, probs):
+        key = row["audio_path"]
+        bucket = grouped.setdefault(
+            key,
+            {
+                "label": 1 if row.get("file_label") == "fake" else int(label),
+                "probs": [],
+                "source": row.get("source", ""),
+                "manipulation_type": row.get("manipulation_type", "none"),
+            },
+        )
+        bucket["label"] = max(bucket["label"], int(label), 1 if row.get("file_label") == "fake" else 0)
+        bucket["probs"].append(float(prob))
+
+    outputs = {
+        "mean": {"labels": [], "probs": []},
+        "max": {"labels": [], "probs": []},
+        "top3_mean": {"labels": [], "probs": []},
+        "top5_mean": {"labels": [], "probs": []},
+    }
+    for bucket in grouped.values():
+        sorted_probs = sorted(bucket["probs"], reverse=True)
+        aggregations = {
+            "mean": sum(sorted_probs) / len(sorted_probs),
+            "max": sorted_probs[0],
+            "top3_mean": sum(sorted_probs[:3]) / min(3, len(sorted_probs)),
+            "top5_mean": sum(sorted_probs[:5]) / min(5, len(sorted_probs)),
+        }
+        for name, prob in aggregations.items():
+            outputs[name]["labels"].append(bucket["label"])
+            outputs[name]["probs"].append(prob)
+    return outputs
+
+
+def aggregate_metrics(rows: list[dict], labels: list[int], probs: list[float], *, min_recall: float) -> dict[str, dict]:
+    output = {}
+    for name, values in aggregate_file_predictions(rows, labels, probs).items():
+        threshold_calibration = find_best_threshold(values["labels"], values["probs"], metric="f1")
+        attention_calibration = find_attention_threshold(values["labels"], values["probs"], min_recall=min_recall)
+        output[name] = {
+            "count": len(values["labels"]),
+            "threshold_calibration": threshold_calibration,
+            "attention_threshold_calibration": attention_calibration,
+        }
+    return output
 
 
 def metrics_by_group(
@@ -500,11 +673,11 @@ def main() -> None:
         pin_memory=pin_memory,
     )
 
-    model = AudioCNN(args.n_mels).to(device)
+    model = build_model(args.architecture, args.n_mels, dropout=args.dropout).to(device)
     pos_weight_value = resolve_pos_weight(str(args.pos_weight), train_rows)
     pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32, device=device)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     history_rows: list[dict] = []
@@ -522,6 +695,7 @@ def main() -> None:
     print(f"val = {len(val_rows)} {count_labels(val_rows)}")
     print(f"test = {len(test_rows)} {count_labels(test_rows)}")
     print(f"pos_weight = {pos_weight_value:.4f}")
+    print(f"architecture = {args.architecture}")
 
     for epoch in range(1, args.epochs + 1):
         train_metrics = train_one_epoch(
@@ -582,6 +756,17 @@ def main() -> None:
         val_predictions["probs"],
         metric="f1",
     )
+    attention_threshold_calibration = find_attention_threshold(
+        val_predictions["labels"],
+        val_predictions["probs"],
+        min_recall=args.attention_min_recall,
+    )
+    val_file_aggregation_metrics = aggregate_metrics(
+        val_rows,
+        val_predictions["labels"],
+        val_predictions["probs"],
+        min_recall=args.attention_min_recall,
+    )
     calibrated_threshold = threshold_calibration["threshold"]
     val_metrics_by_accent = metrics_by_group(
         val_rows,
@@ -601,6 +786,7 @@ def main() -> None:
     test_metrics_calibrated = None
     test_metrics_by_accent = None
     test_metrics_by_source = None
+    test_file_aggregation_metrics = None
     if test_rows:
         test_predictions = collect_predictions(model, test_loader, criterion, device, use_amp=use_amp)
         calibrated_metrics = metrics_from_probs(
@@ -627,6 +813,12 @@ def main() -> None:
             group_field="source",
             threshold=calibrated_threshold,
         )
+        test_file_aggregation_metrics = aggregate_metrics(
+            test_rows,
+            test_predictions["labels"],
+            test_predictions["probs"],
+            min_recall=args.attention_min_recall,
+        )
     elapsed_minutes = (time.time() - started_at) / 60.0
 
     history_path = output_dir / "history.csv"
@@ -637,6 +829,7 @@ def main() -> None:
     summary = {
         "task": "audio_deepfake_detection",
         "model_version": "audio_deepfake_v1",
+        "architecture": args.architecture,
         "manifest_path": str(manifest_path),
         "output_dir": str(output_dir),
         "checkpoint": str(checkpoint_path),
@@ -647,6 +840,8 @@ def main() -> None:
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "learning_rate": args.learning_rate,
+        "weight_decay": args.weight_decay,
+        "dropout": args.dropout,
         "pos_weight": pos_weight_value,
         "seed": args.seed,
         "device": str(device),
@@ -667,6 +862,9 @@ def main() -> None:
         "best_epoch": best_epoch,
         "best_val_auc": best_val_auc,
         "threshold_calibration": threshold_calibration,
+        "attention_threshold_calibration": attention_threshold_calibration,
+        "attention_min_recall": args.attention_min_recall,
+        "val_file_aggregation_metrics": val_file_aggregation_metrics,
         "val_metrics_by_accent": val_metrics_by_accent,
         "val_metrics_by_source": val_metrics_by_source,
         "elapsed_minutes": round(elapsed_minutes, 3),
@@ -674,6 +872,7 @@ def main() -> None:
         "test_metrics_calibrated": test_metrics_calibrated,
         "test_metrics_by_accent": test_metrics_by_accent,
         "test_metrics_by_source": test_metrics_by_source,
+        "test_file_aggregation_metrics": test_file_aggregation_metrics,
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -692,6 +891,11 @@ def main() -> None:
             f"test_f1_cal = {test_metrics_calibrated['f1']:.4f} "
             f"test_acc_cal = {test_metrics_calibrated['acc']:.4f}"
         )
+    print(
+        f"attention_threshold = {attention_threshold_calibration['threshold']:.4f} "
+        f"attention_recall_fake = {attention_threshold_calibration['recall_fake']:.4f} "
+        f"attention_fpr = {attention_threshold_calibration['false_positive_rate']:.4f}"
+    )
     print(f"history = {history_path}")
     print(f"summary = {summary_path}")
 

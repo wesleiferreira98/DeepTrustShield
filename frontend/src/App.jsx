@@ -23,7 +23,7 @@ function App() {
 
   const [sourceImageFile, setSourceImageFile] = useState(null)
   const [sourceAudioFile, setSourceAudioFile] = useState(null)
-  const [sourceAudioOptions, setSourceAudioOptions] = useState({ useTemporalMemory: true })
+  const [sourceAudioOptions, setSourceAudioOptions] = useState({ useTemporalMemory: true, targetAudioModel: 'default' })
   const [sourceVideoFrames, setSourceVideoFrames] = useState([])
 
   const [comparisonResults, setComparisonResults] = useState([])
@@ -41,7 +41,9 @@ function App() {
     }
 
     setComparisonResults((prev) => {
-      const filtered = prev.filter((item) => item.model_version !== entry.model_version)
+      const filtered = prev.filter((item) => (
+        item.model_version !== entry.model_version || item.requested_model !== entry.requested_model
+      ))
       return [...filtered, entry]
     })
   }, [])
@@ -110,7 +112,7 @@ function App() {
     setAnalysisMode('image')
     setSourceImageFile(file)
     setSourceAudioFile(null)
-    setSourceAudioOptions({ useTemporalMemory: true })
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames([])
     setLivenessAnalysis(null)
     setLivenessFailureMessage(null)
@@ -125,7 +127,7 @@ function App() {
     setAnalysisMode('video')
     setSourceImageFile(null)
     setSourceAudioFile(null)
-    setSourceAudioOptions({ useTemporalMemory: true })
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames(frames)
     setLivenessAnalysis(livenessResult)
     setLivenessFailureMessage(null)
@@ -141,17 +143,21 @@ function App() {
     await runAnalysisJob('video', targetModel, frames, false)
   }, [runAnalysisJob])
 
-  const handleAudioUpload = useCallback(async (file, options = { useTemporalMemory: true }) => {
+  const handleAudioUpload = useCallback(async (file, options = { useTemporalMemory: true, targetAudioModel: 'default' }) => {
+    const normalizedOptions = {
+      useTemporalMemory: options.useTemporalMemory ?? true,
+      targetAudioModel: options.targetAudioModel || 'default',
+    }
     setAnalysisMode('audio')
     setSourceImageFile(null)
     setSourceAudioFile(file)
-    setSourceAudioOptions(options)
+    setSourceAudioOptions(normalizedOptions)
     setSourceVideoFrames([])
     setLivenessAnalysis(null)
     setLivenessFailureMessage(null)
     setPreviewUrl(URL.createObjectURL(file))
 
-    await runAnalysisJob('audio', 'audio_deepfake_v1', file, false, options)
+    await runAnalysisJob('audio', normalizedOptions.targetAudioModel, file, false, normalizedOptions)
   }, [runAnalysisJob])
 
   const handleLivenessRejected = useCallback((frames, preview = null, livenessResult = null, message = null) => {
@@ -164,7 +170,7 @@ function App() {
     setComparisonResults([])
     setSourceImageFile(null)
     setSourceAudioFile(null)
-    setSourceAudioOptions({ useTemporalMemory: true })
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames(frames)
     setLivenessAnalysis(livenessResult)
     setLivenessFailureMessage(message)
@@ -190,7 +196,12 @@ function App() {
     }
 
     if (analysisMode === 'audio' && sourceAudioFile) {
-      await runAnalysisJob('audio', 'audio_deepfake_v1', sourceAudioFile, true, sourceAudioOptions)
+      const nextOptions = {
+        ...sourceAudioOptions,
+        targetAudioModel: targetModel || sourceAudioOptions.targetAudioModel || 'default',
+      }
+      setSourceAudioOptions(nextOptions)
+      await runAnalysisJob('audio', nextOptions.targetAudioModel, sourceAudioFile, true, nextOptions)
       return
     }
 
@@ -209,7 +220,7 @@ function App() {
     setError(null)
     setSourceImageFile(null)
     setSourceAudioFile(null)
-    setSourceAudioOptions({ useTemporalMemory: true })
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames([])
     setComparisonResults([])
     setReanalysisLoading(false)

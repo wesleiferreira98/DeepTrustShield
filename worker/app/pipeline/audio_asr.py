@@ -250,6 +250,59 @@ def _sidecar_summary(path: Path, data: dict, status: str) -> dict:
     }
 
 
+def _generate_transcript_data(
+    path: Path,
+    *,
+    model_name: str,
+    language: str,
+    device: str,
+    compute_type: str,
+    beam_size: int,
+    vad_filter: bool,
+    preprocess_audio: bool,
+) -> dict:
+    temporary_path = None
+    try:
+        model, resolved_device = _load_whisper_model(model_name, device, compute_type)
+        asr_audio_path, preprocessing, temporary_path = prepare_audio_for_asr(str(path), enabled=preprocess_audio)
+        segments_iter, info = model.transcribe(
+            asr_audio_path,
+            language=language,
+            beam_size=beam_size,
+            vad_filter=vad_filter,
+            word_timestamps=True,
+        )
+        segments = [_serialize_segment(segment) for segment in segments_iter]
+        words = _flatten_words(segments)
+        return {
+            "text": " ".join(segment["text"] for segment in segments if segment.get("text")).strip(),
+            "words": words,
+            "segments": segments,
+            "asr": {
+                "engine": "faster-whisper",
+                "model": model_name,
+                "language": getattr(info, "language", language),
+                "language_probability": float(getattr(info, "language_probability", 0.0) or 0.0),
+                "duration_seconds": float(getattr(info, "duration", 0.0) or 0.0),
+                "duration_after_vad_seconds": float(getattr(info, "duration_after_vad", 0.0) or 0.0),
+                "device": resolved_device,
+                "compute_type": compute_type,
+                "beam_size": beam_size,
+                "vad_filter": bool(vad_filter),
+                "preprocessing": preprocessing,
+            },
+            "source_audio": str(path),
+            "source_audio_sha256": _file_sha256(path),
+            "sidecar_version": "audio_transcript_sidecar_v1",
+        }
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except Exception:
+                logger.debug("Failed to remove temporary ASR input %s", temporary_path, exc_info=True)
+
+
 def ensure_audio_transcript_sidecar(
     audio_path: str,
     *,
@@ -286,42 +339,40 @@ def ensure_audio_transcript_sidecar(
         }
 
     try:
-        model, resolved_device = _load_whisper_model(model_name, device, compute_type)
-        asr_audio_path, preprocessing, temporary_path = prepare_audio_for_asr(str(path), enabled=preprocess_audio)
-        segments_iter, info = model.transcribe(
-            asr_audio_path,
+        data = _generate_transcript_data(
+            path,
+            model_name=model_name,
             language=language,
+            device=device,
+            compute_type=compute_type,
             beam_size=beam_size,
             vad_filter=vad_filter,
-            word_timestamps=True,
+            preprocess_audio=preprocess_audio,
         )
-        segments = [_serialize_segment(segment) for segment in segments_iter]
-        words = _flatten_words(segments)
-        data = {
-            "text": " ".join(segment["text"] for segment in segments if segment.get("text")).strip(),
-            "words": words,
-            "segments": segments,
-            "asr": {
-                "engine": "faster-whisper",
-                "model": model_name,
-                "language": getattr(info, "language", language),
-                "language_probability": float(getattr(info, "language_probability", 0.0) or 0.0),
-                "duration_seconds": float(getattr(info, "duration", 0.0) or 0.0),
-                "duration_after_vad_seconds": float(getattr(info, "duration_after_vad", 0.0) or 0.0),
-                "device": resolved_device,
-                "compute_type": compute_type,
-                "beam_size": beam_size,
-                "vad_filter": bool(vad_filter),
-                "preprocessing": preprocessing,
-            },
-            "source_audio": str(path),
-            "source_audio_sha256": _file_sha256(path),
-            "sidecar_version": "audio_transcript_sidecar_v1",
-        }
         sidecar_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return _sidecar_summary(sidecar_path, data, "generated")
     except Exception as exc:
         logger.warning("Automatic audio ASR failed for %s: %s", path, exc)
+        should_retry_cpu = device != "cpu" or compute_type not in {"int8", "default"}
+        if should_retry_cpu:
+            try:
+                logger.info("Retrying ASR for %s on CPU (int8)", path)
+                data = _generate_transcript_data(
+                    path,
+                    model_name=model_name,
+                    language=language,
+                    device="cpu",
+                    compute_type="int8",
+                    beam_size=beam_size,
+                    vad_filter=vad_filter,
+                    preprocess_audio=preprocess_audio,
+                )
+                data["asr"]["fallback_from"] = {"device": device, "compute_type": compute_type, "error": str(exc)}
+                sidecar_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                return _sidecar_summary(sidecar_path, data, "generated_cpu_fallback")
+            except Exception as fallback_exc:
+                logger.warning("CPU ASR fallback failed for %s: %s", path, fallback_exc)
+                exc = fallback_exc
         return {
             "available": False,
             "status": "failed",
@@ -338,9 +389,3 @@ def ensure_audio_transcript_sidecar(
             },
             "error": str(exc),
         }
-    finally:
-        if "temporary_path" in locals() and temporary_path is not None:
-            try:
-                temporary_path.unlink(missing_ok=True)
-            except Exception:
-                logger.debug("Failed to remove temporary ASR input %s", temporary_path, exc_info=True)

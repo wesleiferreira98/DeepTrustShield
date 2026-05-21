@@ -45,6 +45,7 @@ export async function analyzeAudio(file, options = {}) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('use_temporal_memory', options.useTemporalMemory ? 'true' : 'false');
+  formData.append('target_audio_model', options.targetAudioModel || 'default');
 
   const response = await fetch(`${AUDIO_API_BASE}/analyze`, {
     method: 'POST',

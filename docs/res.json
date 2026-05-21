@@ -1,17 +1,23 @@
 {
   "threshold": 0.9744173288345337,
-  "decision": "inconclusive",
+  "decision": "real",
+  "model": {
+    "requested_model": "default",
+    "model_key": "default",
+    "model_label": "FakeBrAccent codec equalizado",
+    "model_version": "audio_deepfake_v1"
+  },
   "audio_info": {
     "source_sample_rate": 48000,
     "target_sample_rate": 16000,
     "channels": 1,
-    "original_samples": 3734296,
-    "duration_seconds": 77.79783333333333,
+    "original_samples": 548642,
+    "duration_seconds": 11.430041666666666,
     "clip_seconds": 4,
     "n_mels": 80
   },
   "segment_summary": {
-    "count": 32,
+    "count": 5,
     "window_seconds": 4,
     "stride_seconds": 2,
     "coverage_fraction": 1,
@@ -23,2029 +29,107 @@
       "start": 0,
       "end": 4,
       "duration_seconds": 4,
-      "p_fake": 0.9099846482276917
+      "p_fake": 0.14012739062309265
     },
     {
       "index": 1,
       "start": 2,
       "end": 6,
       "duration_seconds": 4,
-      "p_fake": 0.7955220937728882
+      "p_fake": 0.44006869196891785
     },
     {
       "index": 2,
       "start": 4,
       "end": 8,
       "duration_seconds": 4,
-      "p_fake": 0.9108881950378418
+      "p_fake": 0.3758993148803711
     },
     {
       "index": 3,
-      "start": 8,
-      "end": 12,
+      "start": 6,
+      "end": 10,
       "duration_seconds": 4,
-      "p_fake": 0.9902898669242859
+      "p_fake": 0.5115817189216614
     },
     {
       "index": 4,
-      "start": 10,
-      "end": 14,
+      "start": 7.4300625,
+      "end": 11.4300625,
       "duration_seconds": 4,
-      "p_fake": 0.9554376602172852
-    },
-    {
-      "index": 5,
-      "start": 12,
-      "end": 16,
-      "duration_seconds": 4,
-      "p_fake": 0.9341598749160767
-    },
-    {
-      "index": 6,
-      "start": 14,
-      "end": 18,
-      "duration_seconds": 4,
-      "p_fake": 0.9586238861083984
-    },
-    {
-      "index": 7,
-      "start": 16,
-      "end": 20,
-      "duration_seconds": 4,
-      "p_fake": 0.9721391201019287
-    },
-    {
-      "index": 8,
-      "start": 20,
-      "end": 24,
-      "duration_seconds": 4,
-      "p_fake": 0.9749139547348022
-    },
-    {
-      "index": 9,
-      "start": 22,
-      "end": 26,
-      "duration_seconds": 4,
-      "p_fake": 0.9908609390258789
-    },
-    {
-      "index": 10,
-      "start": 24,
-      "end": 28,
-      "duration_seconds": 4,
-      "p_fake": 0.9891642928123474
-    },
-    {
-      "index": 11,
-      "start": 26,
-      "end": 30,
-      "duration_seconds": 4,
-      "p_fake": 0.9588855504989624
-    },
-    {
-      "index": 12,
-      "start": 28,
-      "end": 32,
-      "duration_seconds": 4,
-      "p_fake": 0.9542509317398071
-    },
-    {
-      "index": 13,
-      "start": 32,
-      "end": 36,
-      "duration_seconds": 4,
-      "p_fake": 0.8708121180534363
-    },
-    {
-      "index": 14,
-      "start": 34,
-      "end": 38,
-      "duration_seconds": 4,
-      "p_fake": 0.8319233655929565
-    },
-    {
-      "index": 15,
-      "start": 36,
-      "end": 40,
-      "duration_seconds": 4,
-      "p_fake": 0.8940140604972839
-    },
-    {
-      "index": 16,
-      "start": 38,
-      "end": 42,
-      "duration_seconds": 4,
-      "p_fake": 0.9456995129585266
-    },
-    {
-      "index": 17,
-      "start": 40,
-      "end": 44,
-      "duration_seconds": 4,
-      "p_fake": 0.9416839480400085
-    },
-    {
-      "index": 18,
-      "start": 42,
-      "end": 46,
-      "duration_seconds": 4,
-      "p_fake": 0.950066864490509
-    },
-    {
-      "index": 19,
-      "start": 46,
-      "end": 50,
-      "duration_seconds": 4,
-      "p_fake": 0.8729656338691711
-    },
-    {
-      "index": 20,
-      "start": 48,
-      "end": 52,
-      "duration_seconds": 4,
-      "p_fake": 0.9569247364997864
-    },
-    {
-      "index": 21,
-      "start": 50,
-      "end": 54,
-      "duration_seconds": 4,
-      "p_fake": 0.8693462610244751
-    },
-    {
-      "index": 22,
-      "start": 52,
-      "end": 56,
-      "duration_seconds": 4,
-      "p_fake": 0.41354337334632874
-    },
-    {
-      "index": 23,
-      "start": 54,
-      "end": 58,
-      "duration_seconds": 4,
-      "p_fake": 0.6445963382720947
-    },
-    {
-      "index": 24,
-      "start": 58,
-      "end": 62,
-      "duration_seconds": 4,
-      "p_fake": 0.561822235584259
-    },
-    {
-      "index": 25,
-      "start": 60,
-      "end": 64,
-      "duration_seconds": 4,
-      "p_fake": 0.8861739039421082
-    },
-    {
-      "index": 26,
-      "start": 62,
-      "end": 66,
-      "duration_seconds": 4,
-      "p_fake": 0.9421756267547607
-    },
-    {
-      "index": 27,
-      "start": 64,
-      "end": 68,
-      "duration_seconds": 4,
-      "p_fake": 0.9749005436897278
-    },
-    {
-      "index": 28,
-      "start": 66,
-      "end": 70,
-      "duration_seconds": 4,
-      "p_fake": 0.9686976671218872
-    },
-    {
-      "index": 29,
-      "start": 70,
-      "end": 74,
-      "duration_seconds": 4,
-      "p_fake": 0.8025984168052673
-    },
-    {
-      "index": 30,
-      "start": 72,
-      "end": 76,
-      "duration_seconds": 4,
-      "p_fake": 0.9148549437522888
-    },
-    {
-      "index": 31,
-      "start": 73.797875,
-      "end": 77.797875,
-      "duration_seconds": 4,
-      "p_fake": 0.9696872234344482
+      "p_fake": 0.26743677258491516
     }
   ],
   "phonetic_event_extraction": {
-    "available": true,
-    "status": "acoustic_classified_candidates",
-    "source": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/data/eval_external/SAlvador audio real 23.transcript.json",
-    "event_count": 15,
-    "candidate_count": 34,
-    "classified_candidate_count": 15,
-    "event_summary": {
-      "candidate_count": 34,
-      "classified_candidate_count": 15,
-      "reliable_event_count": 15,
-      "unknown_candidate_count": 19,
-      "strong_classified_count": 13,
-      "moderate_classified_count": 2,
-      "weak_classified_count": 0,
-      "classified_ratio": 0.4411764705882353,
-      "reliable_event_ratio": 0.4411764705882353,
-      "candidate_by_phenomenon": {
-        "rotic_coda": 11,
-        "s_coda": 21,
-        "td_before_i": 2
-      },
-      "candidate_by_context": {
-        "rotic_coda.verb_infinitive_external_coda": 11,
-        "s_coda.external_coda_consonant": 14,
-        "s_coda.external_coda_pause": 3,
-        "s_coda.internal_coda": 4,
-        "td_before_i.phonological_i": 2
-      },
-      "classified_by_phenomenon": {
-        "rotic_coda": 5,
-        "s_coda": 8,
-        "td_before_i": 2
-      },
-      "classified_by_context": {
-        "rotic_coda.verb_infinitive_external_coda": 5,
-        "s_coda.external_coda_consonant": 5,
-        "s_coda.internal_coda": 3,
-        "td_before_i.phonological_i": 2
-      },
-      "classified_by_variant": {
-        "rotic_coda.deletion": 4,
-        "rotic_coda.present": 1,
-        "s_coda.alveolar": 1,
-        "s_coda.palatal": 7,
-        "td_before_i.dentoalveolar": 2
-      },
-      "average_classified_confidence": 0.8199126953125
-    },
-    "transcript": {
-      "available": true,
-      "source": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/data/eval_external/SAlvador audio real 23.transcript.json",
-      "text": "Oi B, eu ia dar boa tarde, brincadeira e daí é bom dia. Infelizmente agora não é mais na gente que você já tem um tempo, né? Se você chegasse logo, um mês, aí queimasse, aí a gente trocaria, mas como você já tem meses, né? Aí eu sempre chego com você, porém eu não tenho extra, porque às vezes quando eu tenho, eu mando, eu entrego a seu caso e mostro a vocês quanto foi a nota. Agora eu acho que ela está custando 23 ou 24. Tu sabe trocar ou tu quer que seu Carlos troque? Que aí o pessoal, qualquer coisa você me avisa. Agora o pior é que seu Carlos só segunda-feira, que hoje é quinta, né? Aí ele vem segunda, terça e quarta, mas no caso ele vai vir segunda, quarta e quinta, porque terça é feriado, não é isso o 21? Aí você me avisa e aí os meninos paga ele, eu acho que é 15 reais. E como é que chama? Eu posso comprar e botar no aluguel mês que vem, entendeu? Qualquer coisa você me avisa. Agora se tu souber trocar, compra em 10 gramas, se você souber trocar, fica mais fácil que tu não precisa pagar, porque tem uns que não sabem, né? E também resistência é complicadinha, eu tenho medo.",
-      "word_count": 221,
-      "segment_count": 11,
-      "asr": {
-        "engine": "faster-whisper",
-        "model": "medium",
-        "language": "pt",
-        "language_probability": 1,
-        "duration_seconds": 77.7978125,
-        "duration_after_vad_seconds": 77.7978125,
-        "device": "cuda",
-        "compute_type": "float16",
-        "beam_size": 5,
-        "vad_filter": false,
-        "preprocessing": {
-          "enabled": false
-        }
-      }
-    },
-    "word_count": 221,
-    "note": "Eventos candidatos foram inferidos da transcricao; alguns receberam classificacao acustica conservadora."
+    "available": false,
+    "status": "no_sidecar",
+    "source": null,
+    "event_count": 0,
+    "candidate_count": 0,
+    "note": "Nenhuma transcricao ou lista de eventos foneticos foi encontrada ao lado do audio."
   },
   "transcript": {
-    "available": true,
-    "source": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/data/eval_external/SAlvador audio real 23.transcript.json",
-    "text": "Oi B, eu ia dar boa tarde, brincadeira e daí é bom dia. Infelizmente agora não é mais na gente que você já tem um tempo, né? Se você chegasse logo, um mês, aí queimasse, aí a gente trocaria, mas como você já tem meses, né? Aí eu sempre chego com você, porém eu não tenho extra, porque às vezes quando eu tenho, eu mando, eu entrego a seu caso e mostro a vocês quanto foi a nota. Agora eu acho que ela está custando 23 ou 24. Tu sabe trocar ou tu quer que seu Carlos troque? Que aí o pessoal, qualquer coisa você me avisa. Agora o pior é que seu Carlos só segunda-feira, que hoje é quinta, né? Aí ele vem segunda, terça e quarta, mas no caso ele vai vir segunda, quarta e quinta, porque terça é feriado, não é isso o 21? Aí você me avisa e aí os meninos paga ele, eu acho que é 15 reais. E como é que chama? Eu posso comprar e botar no aluguel mês que vem, entendeu? Qualquer coisa você me avisa. Agora se tu souber trocar, compra em 10 gramas, se você souber trocar, fica mais fácil que tu não precisa pagar, porque tem uns que não sabem, né? E também resistência é complicadinha, eu tenho medo.",
-    "word_count": 221,
-    "segment_count": 11,
+    "available": false,
+    "status": "failed",
+    "path": "../artifacts/361fd515-3a9b-4a2a-8125-f5c3e168446d/audio.transcript.json",
+    "text": "",
+    "word_count": 0,
+    "segment_count": 0,
     "asr": {
       "engine": "faster-whisper",
       "model": "medium",
       "language": "pt",
-      "language_probability": 1,
-      "duration_seconds": 77.7978125,
-      "duration_after_vad_seconds": 77.7978125,
-      "device": "cuda",
-      "compute_type": "float16",
-      "beam_size": 5,
-      "vad_filter": false,
-      "preprocessing": {
-        "enabled": false
-      }
+      "device": "auto",
+      "compute_type": "default"
+    },
+    "error": "Library libcublas.so.12 is not found or cannot be loaded"
+  },
+  "phonetic_events": [],
+  "segment_diagnostics": {
+    "available": false,
+    "reason": "no_suspicious_segments",
+    "segments": [],
+    "summary": {
+      "suspicious_count": 0,
+      "terminal_suspicious_count": 0,
+      "possible_end_artifact": false
     }
   },
-  "phonetic_events": [
-    {
-      "event_id": "ev_0001_1",
-      "phenomenon": "td_before_i",
-      "word": "dia.",
-      "start_time": 5.56,
-      "end_time": 5.94,
-      "target_segment": "d",
-      "variant": "dentoalveolar",
-      "position": "onset",
-      "context": "phonological_i",
-      "confidence": 0.82136328125,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.7955220937728882,
-      "following_vowel": "i_phonological",
-      "variant_method": "td_before_i_release_frication",
-      "acoustic_features": {
-        "release_rms": 0.1420978605747223,
-        "zero_crossing_rate": 0.05030559375882149,
-        "spectral_centroid_hz": 1227.0510756452663,
-        "analysis_start": 5.623333333333333,
-        "analysis_end": 5.756333333333333
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "td_before_i",
-        "word": "dia.",
-        "target_segment": "d",
-        "expected_context": "phonological_i",
-        "position": "onset",
-        "start_time": 5.56,
-        "end_time": 5.94,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "release_rms": 0.1420978605747223,
-          "zero_crossing_rate": 0.05030559375882149,
-          "spectral_centroid_hz": 1227.0510756452663,
-          "analysis_start": 5.623333333333333,
-          "analysis_end": 5.756333333333333
-        },
-        "method": "td_before_i_release_frication"
-      },
-      "decision": {
-        "variant": "dentoalveolar",
-        "confidence": 0.82136328125,
-        "quality": "strong",
-        "method": "td_before_i_release_frication"
-      }
-    },
-    {
-      "event_id": "ev_0002_1",
-      "phenomenon": "s_coda",
-      "word": "mais",
-      "start_time": 8,
-      "end_time": 8.18,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9902898669242859,
-      "following_segment": "n",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.12297384440898895,
-        "zero_crossing_rate": 0.04107142984867096,
-        "spectral_centroid_hz": 767.1794929248523,
-        "analysis_start": 8.11,
-        "analysis_end": 8.18
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mais",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 8,
-        "end_time": 8.18,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.12297384440898895,
-          "zero_crossing_rate": 0.04107142984867096,
-          "spectral_centroid_hz": 767.1794929248523,
-          "analysis_start": 8.11,
-          "analysis_end": 8.18
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0003_1",
-      "phenomenon": "s_coda",
-      "word": "mês,",
-      "start_time": 12.48,
-      "end_time": 13.16,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_pause",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9554376602172852,
-      "following_segment": "pause",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.004060353152453899,
-        "zero_crossing_rate": 0.11670719087123871,
-        "spectral_centroid_hz": 1962.163577376715,
-        "analysis_start": 12.98,
-        "analysis_end": 13.16
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mês,",
-        "target_segment": "s",
-        "expected_context": "external_coda_pause",
-        "position": "external_coda",
-        "start_time": 12.48,
-        "end_time": 13.16,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.004060353152453899,
-          "zero_crossing_rate": 0.11670719087123871,
-          "spectral_centroid_hz": 1962.163577376715,
-          "analysis_start": 12.98,
-          "analysis_end": 13.16
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0004_1",
-      "phenomenon": "s_coda",
-      "word": "mas",
-      "start_time": 16.66,
-      "end_time": 16.96,
-      "target_segment": "s",
-      "variant": "palatal",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.8312783203125,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9586238861083984,
-      "following_segment": "c",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.12065132707357407,
-        "zero_crossing_rate": 0.1215008944272995,
-        "spectral_centroid_hz": 2303.767290572126,
-        "analysis_start": 16.855,
-        "analysis_end": 16.96
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mas",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 16.66,
-        "end_time": 16.96,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.12065132707357407,
-          "zero_crossing_rate": 0.1215008944272995,
-          "spectral_centroid_hz": 2303.767290572126,
-          "analysis_start": 16.855,
-          "analysis_end": 16.96
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "palatal",
-        "confidence": 0.8312783203125,
-        "quality": "strong",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0005_1",
-      "phenomenon": "s_coda",
-      "word": "meses,",
-      "start_time": 17.76,
-      "end_time": 18.12,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_pause",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9586238861083984,
-      "following_segment": "pause",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.11807218939065933,
-        "zero_crossing_rate": 0.0312655083835125,
-        "spectral_centroid_hz": 490.4356713846492,
-        "analysis_start": 17.994,
-        "analysis_end": 18.12
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "meses,",
-        "target_segment": "s",
-        "expected_context": "external_coda_pause",
-        "position": "external_coda",
-        "start_time": 17.76,
-        "end_time": 18.12,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.11807218939065933,
-          "zero_crossing_rate": 0.0312655083835125,
-          "spectral_centroid_hz": 490.4356713846492,
-          "analysis_start": 17.994,
-          "analysis_end": 18.12
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0006_1",
-      "phenomenon": "s_coda",
-      "word": "às",
-      "start_time": 22.72,
-      "end_time": 22.94,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9749139547348022,
-      "following_segment": "v",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.2331562489271164,
-        "zero_crossing_rate": 0.05280259996652603,
-        "spectral_centroid_hz": 1344.3761927265582,
-        "analysis_start": 22.863,
-        "analysis_end": 22.94
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "às",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 22.72,
-        "end_time": 22.94,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.2331562489271164,
-          "zero_crossing_rate": 0.05280259996652603,
-          "spectral_centroid_hz": 1344.3761927265582,
-          "analysis_start": 22.863,
-          "analysis_end": 22.94
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0007_1",
-      "phenomenon": "s_coda",
-      "word": "vezes",
-      "start_time": 22.94,
-      "end_time": 23.12,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9749139547348022,
-      "following_segment": "q",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.004412503447383642,
-        "zero_crossing_rate": 0.08221626281738281,
-        "spectral_centroid_hz": 1355.0360605323854,
-        "analysis_start": 23.05,
-        "analysis_end": 23.12
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "vezes",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 22.94,
-        "end_time": 23.12,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.004412503447383642,
-          "zero_crossing_rate": 0.08221626281738281,
-          "spectral_centroid_hz": 1355.0360605323854,
-          "analysis_start": 23.05,
-          "analysis_end": 23.12
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0008_1",
-      "phenomenon": "s_coda",
-      "word": "mostro",
-      "start_time": 26.5,
-      "end_time": 26.78,
-      "target_segment": "s",
-      "variant": "palatal",
-      "position": "internal_coda",
-      "context": "internal_coda",
-      "confidence": 0.8189736328125,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9891642928123474,
-      "following_segment": "t",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "internal_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.033376578241586685,
-        "zero_crossing_rate": 0.2104557603597641,
-        "spectral_centroid_hz": 3462.0521822883807,
-        "analysis_start": 26.57,
-        "analysis_end": 26.663333333333334
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mostro",
-        "target_segment": "s",
-        "expected_context": "internal_coda",
-        "position": "internal_coda",
-        "start_time": 26.5,
-        "end_time": 26.78,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.033376578241586685,
-          "zero_crossing_rate": 0.2104557603597641,
-          "spectral_centroid_hz": 3462.0521822883807,
-          "analysis_start": 26.57,
-          "analysis_end": 26.663333333333334
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "palatal",
-        "confidence": 0.8189736328125,
-        "quality": "strong",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0009_1",
-      "phenomenon": "s_coda",
-      "word": "vocês",
-      "start_time": 26.9,
-      "end_time": 27.12,
-      "target_segment": "s",
-      "variant": "alveolar",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.843376953125,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9891642928123474,
-      "following_segment": "q",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.022051861509680748,
-        "zero_crossing_rate": 0.19902518391609192,
-        "spectral_centroid_hz": 4352.3501629170005,
-        "analysis_start": 27.043,
-        "analysis_end": 27.12
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "vocês",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 26.9,
-        "end_time": 27.12,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.022051861509680748,
-          "zero_crossing_rate": 0.19902518391609192,
-          "spectral_centroid_hz": 4352.3501629170005,
-          "analysis_start": 27.043,
-          "analysis_end": 27.12
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "alveolar",
-        "confidence": 0.843376953125,
-        "quality": "strong",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0010_1",
-      "phenomenon": "s_coda",
-      "word": "está",
-      "start_time": 29.6,
-      "end_time": 29.78,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "internal_coda",
-      "context": "internal_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9588855504989624,
-      "following_segment": "t",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "internal_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.11417237669229507,
-        "zero_crossing_rate": 0.11674774438142776,
-        "spectral_centroid_hz": 1553.6656845499406,
-        "analysis_start": 29.622500000000002,
-        "analysis_end": 29.7125
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "está",
-        "target_segment": "s",
-        "expected_context": "internal_coda",
-        "position": "internal_coda",
-        "start_time": 29.6,
-        "end_time": 29.78,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.11417237669229507,
-          "zero_crossing_rate": 0.11674774438142776,
-          "spectral_centroid_hz": 1553.6656845499406,
-          "analysis_start": 29.622500000000002,
-          "analysis_end": 29.7125
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0011_1",
-      "phenomenon": "s_coda",
-      "word": "custando",
-      "start_time": 29.78,
-      "end_time": 30.28,
-      "target_segment": "s",
-      "variant": "palatal",
-      "position": "internal_coda",
-      "context": "internal_coda",
-      "confidence": 0.8443520507812501,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9542509317398071,
-      "following_segment": "t",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "internal_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.04941685125231743,
-        "zero_crossing_rate": 0.3671835958957672,
-        "spectral_centroid_hz": 3733.556694868226,
-        "analysis_start": 29.87375,
-        "analysis_end": 29.99875
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "custando",
-        "target_segment": "s",
-        "expected_context": "internal_coda",
-        "position": "internal_coda",
-        "start_time": 29.78,
-        "end_time": 30.28,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.04941685125231743,
-          "zero_crossing_rate": 0.3671835958957672,
-          "spectral_centroid_hz": 3733.556694868226,
-          "analysis_start": 29.87375,
-          "analysis_end": 29.99875
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "palatal",
-        "confidence": 0.8443520507812501,
-        "quality": "strong",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0012",
-      "phenomenon": "rotic_coda",
-      "word": "trocar",
-      "start_time": 32.96,
-      "end_time": 33.32,
-      "target_segment": "r",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8708121180534363,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.13129206001758575,
-        "body_rms": 0.09694526344537735,
-        "tail_body_rms_ratio": 1.354290610510958,
-        "tail_zero_crossing_rate": 0.11618669331073761
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "trocar",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 32.96,
-        "end_time": 33.32,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.13129206001758575,
-          "body_rms": 0.09694526344537735,
-          "tail_body_rms_ratio": 1.354290610510958,
-          "tail_zero_crossing_rate": 0.11618669331073761
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0013",
-      "phenomenon": "rotic_coda",
-      "word": "quer",
-      "start_time": 33.6,
-      "end_time": 33.7,
-      "target_segment": "r",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8708121180534363,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "word_too_short",
-      "acoustic_features": {},
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "quer",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 33.6,
-        "end_time": 33.7,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": false,
-        "features": {},
-        "method": "word_too_short"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "word_too_short"
-      }
-    },
-    {
-      "event_id": "ev_0014_1",
-      "phenomenon": "s_coda",
-      "word": "Carlos",
-      "start_time": 33.96,
-      "end_time": 34.2,
-      "target_segment": "s",
-      "variant": "palatal",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.842484375,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.8708121180534363,
-      "following_segment": "t",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.04855181649327278,
-        "zero_crossing_rate": 0.3060312867164612,
-        "spectral_centroid_hz": 3862.115076702532,
-        "analysis_start": 34.116,
-        "analysis_end": 34.2
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "Carlos",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 33.96,
-        "end_time": 34.2,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.04855181649327278,
-          "zero_crossing_rate": 0.3060312867164612,
-          "spectral_centroid_hz": 3862.115076702532,
-          "analysis_start": 34.116,
-          "analysis_end": 34.2
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "palatal",
-        "confidence": 0.842484375,
-        "quality": "strong",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0015",
-      "phenomenon": "rotic_coda",
-      "word": "qualquer",
-      "start_time": 36.68,
-      "end_time": 36.84,
-      "target_segment": "r",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8319233655929565,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "word_too_short",
-      "acoustic_features": {},
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "qualquer",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 36.68,
-        "end_time": 36.84,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": false,
-        "features": {},
-        "method": "word_too_short"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "word_too_short"
-      }
-    },
-    {
-      "event_id": "ev_0016_1",
-      "phenomenon": "s_coda",
-      "word": "Carlos",
-      "start_time": 39.24,
-      "end_time": 39.62,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8940140604972839,
-      "following_segment": "s",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.08621800690889359,
-        "zero_crossing_rate": 0.13117066025733948,
-        "spectral_centroid_hz": 1008.5932575631637,
-        "analysis_start": 39.487,
-        "analysis_end": 39.62
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "Carlos",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 39.24,
-        "end_time": 39.62,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.08621800690889359,
-          "zero_crossing_rate": 0.13117066025733948,
-          "spectral_centroid_hz": 1008.5932575631637,
-          "analysis_start": 39.487,
-          "analysis_end": 39.62
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0017_1",
-      "phenomenon": "s_coda",
-      "word": "mas",
-      "start_time": 46.94,
-      "end_time": 47.18,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8729656338691711,
-      "following_segment": "n",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.31670457124710083,
-        "zero_crossing_rate": 0.03425167500972748,
-        "spectral_centroid_hz": 876.0642446888318,
-        "analysis_start": 47.096,
-        "analysis_end": 47.18
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mas",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 46.94,
-        "end_time": 47.18,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.31670457124710083,
-          "zero_crossing_rate": 0.03425167500972748,
-          "spectral_centroid_hz": 876.0642446888318,
-          "analysis_start": 47.096,
-          "analysis_end": 47.18
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0018_1",
-      "phenomenon": "s_coda",
-      "word": "os",
-      "start_time": 54.58,
-      "end_time": 54.74,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.41354337334632874,
-      "following_segment": "m",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.20431984961032867,
-        "zero_crossing_rate": 0.03663985803723335,
-        "spectral_centroid_hz": 1318.627124744943,
-        "analysis_start": 54.67,
-        "analysis_end": 54.74
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "os",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 54.58,
-        "end_time": 54.74,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.20431984961032867,
-          "zero_crossing_rate": 0.03663985803723335,
-          "spectral_centroid_hz": 1318.627124744943,
-          "analysis_start": 54.67,
-          "analysis_end": 54.74
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0019_1",
-      "phenomenon": "s_coda",
-      "word": "meninos",
-      "start_time": 54.74,
-      "end_time": 55.06,
-      "target_segment": "s",
-      "variant": "palatal",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.71515283203125,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.41354337334632874,
-      "following_segment": "p",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.02453501522541046,
-        "zero_crossing_rate": 0.2378559410572052,
-        "spectral_centroid_hz": 4181.231836174725,
-        "analysis_start": 54.948,
-        "analysis_end": 55.06
-      },
-      "event_quality": "moderate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "meninos",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 54.74,
-        "end_time": 55.06,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.02453501522541046,
-          "zero_crossing_rate": 0.2378559410572052,
-          "spectral_centroid_hz": 4181.231836174725,
-          "analysis_start": 54.948,
-          "analysis_end": 55.06
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "palatal",
-        "confidence": 0.71515283203125,
-        "quality": "moderate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0020_1",
-      "phenomenon": "s_coda",
-      "word": "reais.",
-      "start_time": 57.02,
-      "end_time": 57.52,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_pause",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.6445963382720947,
-      "following_segment": "pause",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.007703385315835476,
-        "zero_crossing_rate": 0.09682029485702515,
-        "spectral_centroid_hz": 1874.4125929428515,
-        "analysis_start": 57.345000000000006,
-        "analysis_end": 57.52
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "reais.",
-        "target_segment": "s",
-        "expected_context": "external_coda_pause",
-        "position": "external_coda",
-        "start_time": 57.02,
-        "end_time": 57.52,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.007703385315835476,
-          "zero_crossing_rate": 0.09682029485702515,
-          "spectral_centroid_hz": 1874.4125929428515,
-          "analysis_start": 57.345000000000006,
-          "analysis_end": 57.52
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0021",
-      "phenomenon": "rotic_coda",
-      "word": "comprar",
-      "start_time": 61,
-      "end_time": 61.46,
-      "target_segment": "r",
-      "variant": "present",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.8330224609375001,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.561822235584259,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.14616341888904572,
-        "body_rms": 0.14471983909606934,
-        "tail_body_rms_ratio": 1.009974995840191,
-        "tail_zero_crossing_rate": 0.17584994435310364
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "comprar",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 61,
-        "end_time": 61.46,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.14616341888904572,
-          "body_rms": 0.14471983909606934,
-          "tail_body_rms_ratio": 1.009974995840191,
-          "tail_zero_crossing_rate": 0.17584994435310364
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "present",
-        "confidence": 0.8330224609375001,
-        "quality": "strong",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0022",
-      "phenomenon": "rotic_coda",
-      "word": "botar",
-      "start_time": 61.78,
-      "end_time": 62.12,
-      "target_segment": "r",
-      "variant": "deletion",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.8240273437500001,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.561822235584259,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.10458744317293167,
-        "body_rms": 0.13792942464351654,
-        "tail_body_rms_ratio": 0.7582678130010446,
-        "tail_zero_crossing_rate": 0.06940063089132309
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "botar",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 61.78,
-        "end_time": 62.12,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.10458744317293167,
-          "body_rms": 0.13792942464351654,
-          "tail_body_rms_ratio": 0.7582678130010446,
-          "tail_zero_crossing_rate": 0.06940063089132309
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "deletion",
-        "confidence": 0.8240273437500001,
-        "quality": "strong",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0023_1",
-      "phenomenon": "s_coda",
-      "word": "mês",
-      "start_time": 62.6,
-      "end_time": 62.78,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8861739039421082,
-      "following_segment": "q",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.017712026834487915,
-        "zero_crossing_rate": 0.0848972275853157,
-        "spectral_centroid_hz": 1685.8216227960909,
-        "analysis_start": 62.71,
-        "analysis_end": 62.78
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mês",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 62.6,
-        "end_time": 62.78,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.017712026834487915,
-          "zero_crossing_rate": 0.0848972275853157,
-          "spectral_centroid_hz": 1685.8216227960909,
-          "analysis_start": 62.71,
-          "analysis_end": 62.78
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0024",
-      "phenomenon": "rotic_coda",
-      "word": "Qualquer",
-      "start_time": 64.26,
-      "end_time": 64.64,
-      "target_segment": "r",
-      "variant": "deletion",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.8286416015625,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9421756267547607,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.12895165383815765,
-        "body_rms": 0.15664343535900116,
-        "tail_body_rms_ratio": 0.8232177335910792,
-        "tail_zero_crossing_rate": 0.07243650406599045
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "Qualquer",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 64.26,
-        "end_time": 64.64,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.12895165383815765,
-          "body_rms": 0.15664343535900116,
-          "tail_body_rms_ratio": 0.8232177335910792,
-          "tail_zero_crossing_rate": 0.07243650406599045
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "deletion",
-        "confidence": 0.8286416015625,
-        "quality": "strong",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0025",
-      "phenomenon": "rotic_coda",
-      "word": "souber",
-      "start_time": 66.44,
-      "end_time": 66.72,
-      "target_segment": "r",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9749005436897278,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.0264277383685112,
-        "body_rms": 0.12817996740341187,
-        "tail_body_rms_ratio": 0.206176822352724,
-        "tail_zero_crossing_rate": 0.06764518469572067
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "souber",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 66.44,
-        "end_time": 66.72,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.0264277383685112,
-          "body_rms": 0.12817996740341187,
-          "tail_body_rms_ratio": 0.206176822352724,
-          "tail_zero_crossing_rate": 0.06764518469572067
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0026",
-      "phenomenon": "rotic_coda",
-      "word": "trocar,",
-      "start_time": 66.72,
-      "end_time": 67.74,
-      "target_segment": "r",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9749005436897278,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.006508290767669678,
-        "body_rms": 0.11747785657644272,
-        "tail_body_rms_ratio": 0.055400149077751856,
-        "tail_zero_crossing_rate": 0.06291519850492477
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "trocar,",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 66.72,
-        "end_time": 67.74,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.006508290767669678,
-          "body_rms": 0.11747785657644272,
-          "tail_body_rms_ratio": 0.055400149077751856,
-          "tail_zero_crossing_rate": 0.06291519850492477
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0027_1",
-      "phenomenon": "s_coda",
-      "word": "gramas,",
-      "start_time": 68.3,
-      "end_time": 68.46,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.9686976671218872,
-      "following_segment": "s",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.1864641159772873,
-        "zero_crossing_rate": 0.05093833804130554,
-        "spectral_centroid_hz": 872.1256059652281,
-        "analysis_start": 68.39,
-        "analysis_end": 68.46
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "gramas,",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 68.3,
-        "end_time": 68.46,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.1864641159772873,
-          "zero_crossing_rate": 0.05093833804130554,
-          "spectral_centroid_hz": 872.1256059652281,
-          "analysis_start": 68.39,
-          "analysis_end": 68.46
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0028",
-      "phenomenon": "rotic_coda",
-      "word": "souber",
-      "start_time": 68.9,
-      "end_time": 69.2,
-      "target_segment": "r",
-      "variant": "deletion",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.8387490234375,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9686976671218872,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.03856484219431877,
-        "body_rms": 0.1583886444568634,
-        "tail_body_rms_ratio": 0.24348236785890148,
-        "tail_zero_crossing_rate": 0.05840286239981651
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "souber",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 68.9,
-        "end_time": 69.2,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.03856484219431877,
-          "body_rms": 0.1583886444568634,
-          "tail_body_rms_ratio": 0.24348236785890148,
-          "tail_zero_crossing_rate": 0.05840286239981651
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "deletion",
-        "confidence": 0.8387490234375,
-        "quality": "strong",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0029",
-      "phenomenon": "rotic_coda",
-      "word": "trocar,",
-      "start_time": 69.2,
-      "end_time": 70.74,
-      "target_segment": "r",
-      "variant": "deletion",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.7895717773437501,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.9686976671218872,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.000017867670976556838,
-        "body_rms": 0.09978695213794708,
-        "tail_body_rms_ratio": 0.0001790581894099369,
-        "tail_zero_crossing_rate": 0.1563110649585724
-      },
-      "event_quality": "moderate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "trocar,",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 69.2,
-        "end_time": 70.74,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.000017867670976556838,
-          "body_rms": 0.09978695213794708,
-          "tail_body_rms_ratio": 0.0001790581894099369,
-          "tail_zero_crossing_rate": 0.1563110649585724
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "deletion",
-        "confidence": 0.7895717773437501,
-        "quality": "moderate",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0030_1",
-      "phenomenon": "s_coda",
-      "word": "mais",
-      "start_time": 71.8,
-      "end_time": 72.06,
-      "target_segment": "s",
-      "variant": "palatal",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.844681640625,
-      "source": "acoustic_transcript_candidate",
-      "neural_score_local": 0.8025984168052673,
-      "following_segment": "f",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "s_coda_frication_centroid",
-      "acoustic_features": {
-        "target_rms": 0.016134297475218773,
-        "zero_crossing_rate": 0.11271477490663528,
-        "spectral_centroid_hz": 2417.4067585093567,
-        "analysis_start": 71.969,
-        "analysis_end": 72.06
-      },
-      "event_quality": "strong",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "mais",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 71.8,
-        "end_time": 72.06,
-        "source": "acoustic_transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "target_rms": 0.016134297475218773,
-          "zero_crossing_rate": 0.11271477490663528,
-          "spectral_centroid_hz": 2417.4067585093567,
-          "analysis_start": 71.969,
-          "analysis_end": 72.06
-        },
-        "method": "s_coda_frication_centroid"
-      },
-      "decision": {
-        "variant": "palatal",
-        "confidence": 0.844681640625,
-        "quality": "strong",
-        "method": "s_coda_frication_centroid"
-      }
-    },
-    {
-      "event_id": "ev_0031",
-      "phenomenon": "rotic_coda",
-      "word": "pagar,",
-      "start_time": 73.02,
-      "end_time": 73.38,
-      "target_segment": "r",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "verb_infinitive_external_coda",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8025984168052673,
-      "lexical_class": "verb_infinitive_candidate",
-      "variant_method": "final_r_tail_energy_zcr",
-      "acoustic_features": {
-        "tail_rms": 0.121587835252285,
-        "body_rms": 0.11681212484836578,
-        "tail_body_rms_ratio": 1.040883687460686,
-        "tail_zero_crossing_rate": 0.0873882845044136
-      },
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "rotic_coda",
-        "word": "pagar,",
-        "target_segment": "r",
-        "expected_context": "verb_infinitive_external_coda",
-        "position": "external_coda",
-        "start_time": 73.02,
-        "end_time": 73.38,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": true,
-        "features": {
-          "tail_rms": 0.121587835252285,
-          "body_rms": 0.11681212484836578,
-          "tail_body_rms_ratio": 1.040883687460686,
-          "tail_zero_crossing_rate": 0.0873882845044136
-        },
-        "method": "final_r_tail_energy_zcr"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "final_r_tail_energy_zcr"
-      }
-    },
-    {
-      "event_id": "ev_0032_1",
-      "phenomenon": "s_coda",
-      "word": "uns",
-      "start_time": 73.84,
-      "end_time": 73.96,
-      "target_segment": "s",
-      "variant": "unknown",
-      "position": "external_coda",
-      "context": "external_coda_consonant",
-      "confidence": 0.45,
-      "source": "transcript_candidate",
-      "neural_score_local": 0.8025984168052673,
-      "following_segment": "q",
-      "candidate_method": "orthographic_conservative_s_coda",
-      "candidate_reason": "external_coda",
-      "variant_method": "word_too_short",
-      "acoustic_features": {},
-      "event_quality": "candidate",
-      "candidate": {
-        "phenomenon": "s_coda",
-        "word": "uns",
-        "target_segment": "s",
-        "expected_context": "external_coda_consonant",
-        "position": "external_coda",
-        "start_time": 73.84,
-        "end_time": 73.96,
-        "source": "transcript_candidate"
-      },
-      "evidence": {
-        "available": false,
-        "features": {},
-        "method": "word_too_short"
-      },
-      "decision": {
-        "variant": "unknown",
-        "confidence": 0.45,
-        "quality": "candidate",
-        "method": "word_too_short"
-      }
-    }
-  ],
-  "segment_diagnostics": {
+  "temporal_memory": {
     "available": true,
-    "segments": [
-      {
-        "index": 3,
-        "start": 8,
-        "end": 12,
-        "p_fake": 0.9902898669242859,
-        "terminal_segment": false,
-        "possible_end_artifact": false,
-        "rms": 0.1297510266304016,
-        "silence_ratio": 0.2958281338214874,
-        "clipping_ratio": 0,
-        "previous_rms": 0.14369916915893555,
-        "volume_change_ratio": 0.09706487942951762
-      },
-      {
-        "index": 8,
-        "start": 20,
-        "end": 24,
-        "p_fake": 0.9749139547348022,
-        "terminal_segment": false,
-        "possible_end_artifact": false,
-        "rms": 0.13375434279441833,
-        "silence_ratio": 0.2973906397819519,
-        "clipping_ratio": 0,
-        "previous_rms": 0.1169256865978241,
-        "volume_change_ratio": 0.1439260840475356
-      },
-      {
-        "index": 9,
-        "start": 22,
-        "end": 26,
-        "p_fake": 0.9908609390258789,
-        "terminal_segment": false,
-        "possible_end_artifact": false,
-        "rms": 0.1510332077741623,
-        "silence_ratio": 0.2627812623977661,
-        "clipping_ratio": 0,
-        "previous_rms": 0.13375434279441833,
-        "volume_change_ratio": 0.12918358102436894
-      },
-      {
-        "index": 10,
-        "start": 24,
-        "end": 28,
-        "p_fake": 0.9891642928123474,
-        "terminal_segment": false,
-        "possible_end_artifact": false,
-        "rms": 0.14879009127616882,
-        "silence_ratio": 0.21267187595367432,
-        "clipping_ratio": 0,
-        "previous_rms": 0.1510332077741623,
-        "volume_change_ratio": 0.014851809949951986
-      },
-      {
-        "index": 27,
-        "start": 64,
-        "end": 68,
-        "p_fake": 0.9749005436897278,
-        "terminal_segment": false,
-        "possible_end_artifact": false,
-        "rms": 0.13145217299461365,
-        "silence_ratio": 0.30518749356269836,
-        "clipping_ratio": 0.000015625000742147677,
-        "previous_rms": 0.12729805707931519,
-        "volume_change_ratio": 0.03263298757741582
-      }
-    ],
-    "summary": {
-      "suspicious_count": 5,
-      "terminal_suspicious_count": 0,
-      "terminal_suspicious_ratio": 0,
-      "possible_end_artifact": false,
-      "max_volume_change_ratio": 0.1439260840475356,
-      "max_silence_ratio": 0.30518749356269836,
-      "max_clipping_ratio": 0.000015625000742147677
-    }
+    "status": "applied",
+    "enabled": true,
+    "attention_threshold": 0.9244173288345336,
+    "baseline": {
+      "median_score": 0.3758993148803711,
+      "mad_score": 0.10846254229545593,
+      "median_rms": 0.05087419971823692,
+      "median_silence_ratio": 0.3807656168937683
+    },
+    "rupture_candidate_count": 0,
+    "rupture_score": 0,
+    "rupture_candidates": [],
+    "explanations": [
+      "A memoria temporal nao encontrou ruptura local relevante."
+    ]
+  },
+  "ground_truth": {
+    "available": false,
+    "status": "not_found",
+    "audio_sha256": "8cbf2586ebb0bc3d62bf874549f5cccf6fbca9907d918975d7c914258dc3d374"
+  },
+  "analysis_options": {
+    "temporal_memory_enabled": true,
+    "temporal_memory_status": "applied"
   },
   "symbolic": {
-    "decision": "inconclusive",
-    "risk_level": "medium",
+    "decision": "real",
+    "risk_level": "low",
     "confidence": "moderate",
-    "neural_score": 0.9621660113334656,
-    "symbolic_score": 0.09,
-    "final_score": 0.7005162079334258,
-    "decision_score": 0.890862743370235,
+    "neural_score": 0.38192304968833923,
+    "symbolic_score": 0.35000000000000003,
+    "final_score": 0.3723461347818374,
+    "decision_score": 0.3470227777957916,
     "threshold": 0.9744173288345337,
     "flags": {
       "short_audio": false,
@@ -2053,369 +137,211 @@
       "high_silence": false,
       "low_volume": false,
       "clipped_audio": false,
-      "near_threshold": true,
+      "near_threshold": false,
       "strong_fake_score": false,
-      "strong_real_score": false,
+      "strong_real_score": true,
       "low_confidence_fake": false,
       "feature_extraction_failed": false,
       "partial_audio_analysis": false,
       "segment_score_disagreement": true,
-      "isolated_suspicious_segment": true,
+      "isolated_suspicious_segment": false,
       "consistent_suspicious_segments": false,
       "regional_bias_review": false,
       "domain_mismatch_warning": false,
       "phonetic_layer_available": true,
-      "phonetic_coverage_insufficient": false,
-      "phonetic_consistency_support": true,
+      "phonetic_coverage_insufficient": true,
+      "phonetic_consistency_support": false,
       "phonetic_disruption_alert": false,
       "terminal_suspicious_segments": false,
-      "possible_end_artifact": false
+      "possible_end_artifact": false,
+      "localized_manipulation_sensitivity": false,
+      "temporal_memory_available": true,
+      "temporal_memory_rupture_candidate": false,
+      "symbolic_contestation": false,
+      "neural_suspicion_contested": false
     },
     "explanations": [
-      "O score ficou proximo ao limite de decisao.",
+      "O modelo neural ficou bem abaixo do limite de audio fake.",
       "Os scores por segmento variaram bastante ao longo do audio.",
-      "A suspeita se concentrou em poucos trechos, nao no audio inteiro.",
-      "O apagamento de /r/ final em verbos no infinitivo e plausivel no portugues brasileiro falado.",
-      "A alternancia de /r/ final apareceu sem ruptura localizada clara.",
-      "A variante rotica dominante permaneceu estavel ao longo do audio.",
-      "A realizacao palatal de /s/ em coda apareceu de modo recorrente e estavel.",
-      "A palatalizacao de /s/ ocorreu em contexto fonetico favorecedor.",
-      "Os fenomenos fonetico-fonologicos observados mantiveram padrao estavel.",
-      "O score neural esta alto, mas os padroes fonetico-fonologicos foram consistentes."
+      "A camada fonetico-fonologica foi executada, mas a cobertura de eventos confiaveis ainda foi baixa."
     ],
     "adjustments": [
       {
-        "reason": "near_threshold",
+        "reason": "strong_real_score",
         "delta": -0.1
       },
       {
         "reason": "segment_score_disagreement",
         "delta": -0.05
-      },
-      {
-        "reason": "isolated_suspicious_segment",
-        "delta": -0.1
-      },
-      {
-        "reason": "phonetic_symbolic_layer",
-        "delta": -0.16
       }
     ],
     "segment_summary": {
-      "count": 32,
-      "fake_count": 5,
-      "fake_ratio": 0.15625,
-      "min_score": 0.41354337334632874,
-      "max_score": 0.9908609390258789,
-      "mean_score": 0.890862743370235,
-      "score_range": 0.5773175656795502,
-      "suspicious_segments": [
-        {
-          "index": 3,
-          "start": 8,
-          "end": 12,
-          "p_fake": 0.9902898669242859
-        },
-        {
-          "index": 8,
-          "start": 20,
-          "end": 24,
-          "p_fake": 0.9749139547348022
-        },
-        {
-          "index": 9,
-          "start": 22,
-          "end": 26,
-          "p_fake": 0.9908609390258789
-        },
-        {
-          "index": 10,
-          "start": 24,
-          "end": 28,
-          "p_fake": 0.9891642928123474
-        },
-        {
-          "index": 27,
-          "start": 64,
-          "end": 68,
-          "p_fake": 0.9749005436897278
-        }
-      ]
+      "count": 5,
+      "fake_count": 0,
+      "fake_ratio": 0,
+      "min_score": 0.14012739062309265,
+      "max_score": 0.5115817189216614,
+      "mean_score": 0.3470227777957916,
+      "score_range": 0.3714543282985687,
+      "suspicious_segments": []
     },
     "segment_diagnostics": {
-      "available": true,
-      "segments": [
-        {
-          "index": 3,
-          "start": 8,
-          "end": 12,
-          "p_fake": 0.9902898669242859,
-          "terminal_segment": false,
-          "possible_end_artifact": false,
-          "rms": 0.1297510266304016,
-          "silence_ratio": 0.2958281338214874,
-          "clipping_ratio": 0,
-          "previous_rms": 0.14369916915893555,
-          "volume_change_ratio": 0.09706487942951762
-        },
-        {
-          "index": 8,
-          "start": 20,
-          "end": 24,
-          "p_fake": 0.9749139547348022,
-          "terminal_segment": false,
-          "possible_end_artifact": false,
-          "rms": 0.13375434279441833,
-          "silence_ratio": 0.2973906397819519,
-          "clipping_ratio": 0,
-          "previous_rms": 0.1169256865978241,
-          "volume_change_ratio": 0.1439260840475356
-        },
-        {
-          "index": 9,
-          "start": 22,
-          "end": 26,
-          "p_fake": 0.9908609390258789,
-          "terminal_segment": false,
-          "possible_end_artifact": false,
-          "rms": 0.1510332077741623,
-          "silence_ratio": 0.2627812623977661,
-          "clipping_ratio": 0,
-          "previous_rms": 0.13375434279441833,
-          "volume_change_ratio": 0.12918358102436894
-        },
-        {
-          "index": 10,
-          "start": 24,
-          "end": 28,
-          "p_fake": 0.9891642928123474,
-          "terminal_segment": false,
-          "possible_end_artifact": false,
-          "rms": 0.14879009127616882,
-          "silence_ratio": 0.21267187595367432,
-          "clipping_ratio": 0,
-          "previous_rms": 0.1510332077741623,
-          "volume_change_ratio": 0.014851809949951986
-        },
-        {
-          "index": 27,
-          "start": 64,
-          "end": 68,
-          "p_fake": 0.9749005436897278,
-          "terminal_segment": false,
-          "possible_end_artifact": false,
-          "rms": 0.13145217299461365,
-          "silence_ratio": 0.30518749356269836,
-          "clipping_ratio": 0.000015625000742147677,
-          "previous_rms": 0.12729805707931519,
-          "volume_change_ratio": 0.03263298757741582
-        }
-      ],
+      "available": false,
+      "reason": "no_suspicious_segments",
+      "segments": [],
       "summary": {
-        "suspicious_count": 5,
+        "suspicious_count": 0,
         "terminal_suspicious_count": 0,
-        "terminal_suspicious_ratio": 0,
-        "possible_end_artifact": false,
-        "max_volume_change_ratio": 0.1439260840475356,
-        "max_silence_ratio": 0.30518749356269836,
-        "max_clipping_ratio": 0.000015625000742147677
+        "possible_end_artifact": false
       }
     },
     "regional_bias_review": {
       "review_needed": false,
       "hypothesis": "not_triggered",
       "evidence": [
-        "compressed_or_mobile_format",
         "resampled_from_external_sample_rate",
-        "long_form_audio"
+        "long_form_audio",
+        "natural_pause_or_recording_silence"
       ],
       "note": "Sem evidencia simbolica suficiente para levantar hipotese regional/domino."
     },
     "phonetic_review": {
       "available": true,
-      "status": "applied",
+      "status": "insufficient_coverage",
       "knowledge_version": "phonetic_rules_v1",
       "knowledge_path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/knowledge/phonetic_rules_v1.yaml",
-      "event_count": 15,
-      "coverage_score": 1,
+      "event_count": 0,
+      "coverage_score": 0,
       "evidence_quality": {
-        "total_event_count": 34,
-        "classified_event_count": 15,
-        "classified_event_ratio": 0.4411764705882353,
-        "average_confidence": 0.8199126953125,
-        "phenomenon_diversity_score": 1,
-        "quality_score": 0.8199126953125
+        "total_event_count": 0,
+        "classified_event_count": 0,
+        "classified_event_ratio": 0,
+        "average_confidence": 0,
+        "phenomenon_diversity_score": 0,
+        "quality_score": 0
       },
-      "phonetic_consistency_score": 0.9333333333333332,
-      "linguistic_plausibility_score": 0.9028571428571428,
-      "raw_localized_disruption_score": 0.14285714285714285,
-      "localized_disruption_score": 0.14285714285714285,
+      "phonetic_consistency_score": 0,
+      "linguistic_plausibility_score": 0.4,
+      "raw_localized_disruption_score": 0,
+      "localized_disruption_score": 0,
       "localized_disruption": {
-        "available": true,
-        "comparison_count": 7,
-        "raw_disruption_count": 2,
-        "aligned_disruption_count": 1,
-        "aligned_disruption_count_by_phenomenon": {
-          "rotic_coda": 1
-        },
-        "raw_score": 0.2857142857142857,
-        "aligned_score": 0.14285714285714285,
-        "phenomena": [
-          "rotic_coda"
-        ],
-        "items": [
-          {
-            "phenomenon": "rotic_coda",
-            "context": "verb_infinitive_external_coda",
-            "position": "external_coda",
-            "target_segment": "r",
-            "following_segment": null,
-            "start_time": 61,
-            "end_time": 64.26,
-            "delta_seconds": 3.260000000000005,
-            "from_variant": "present",
-            "to_variant": "deletion",
-            "from_word": "comprar",
-            "to_word": "Qualquer",
-            "max_neural_score_local": 0.9421756267547607,
-            "aligned_with_neural_peak": true
-          }
-        ],
-        "unfiltered_items": [
-          {
-            "phenomenon": "rotic_coda",
-            "context": "verb_infinitive_external_coda",
-            "position": "external_coda",
-            "target_segment": "r",
-            "following_segment": null,
-            "start_time": 61,
-            "end_time": 61.78,
-            "delta_seconds": 0.7800000000000011,
-            "from_variant": "present",
-            "to_variant": "deletion",
-            "from_word": "comprar",
-            "to_word": "botar",
-            "max_neural_score_local": 0.561822235584259,
-            "aligned_with_neural_peak": false
-          },
-          {
-            "phenomenon": "rotic_coda",
-            "context": "verb_infinitive_external_coda",
-            "position": "external_coda",
-            "target_segment": "r",
-            "following_segment": null,
-            "start_time": 61,
-            "end_time": 64.26,
-            "delta_seconds": 3.260000000000005,
-            "from_variant": "present",
-            "to_variant": "deletion",
-            "from_word": "comprar",
-            "to_word": "Qualquer",
-            "max_neural_score_local": 0.9421756267547607,
-            "aligned_with_neural_peak": true
-          }
-        ],
-        "peak_cutoff": 0.8944173288345337,
-        "window_seconds": 6
+        "available": false,
+        "comparison_count": 0,
+        "raw_disruption_count": 0,
+        "aligned_disruption_count": 0,
+        "raw_score": 0,
+        "aligned_score": 0,
+        "phenomena": [],
+        "items": []
       },
-      "alignment_score": 0.6,
-      "adjustment": -0.16,
+      "alignment_score": 0,
+      "adjustment": 0,
       "activated_rules": [
         {
-          "rule_id": "R1",
-          "phenomenon": "rotic_coda",
-          "condition": "verb_infinitive_final_r_deletion_consistent",
-          "effect": "reduce_suspicion",
-          "weight": -0.05,
-          "explanation": "O apagamento de /r/ final em verbos no infinitivo e plausivel no portugues brasileiro falado."
-        },
-        {
-          "rule_id": "R2",
-          "phenomenon": "rotic_coda",
-          "condition": "final_r_presence_and_deletion_without_local_disruption",
-          "effect": "reduce_suspicion_lightly",
-          "weight": -0.03,
-          "explanation": "A alternancia de /r/ final apareceu sem ruptura localizada clara."
-        },
-        {
-          "rule_id": "R5",
-          "phenomenon": "rotic_coda",
-          "condition": "dominant_variant_stable",
-          "effect": "increase_consistency",
-          "weight": -0.04,
-          "explanation": "A variante rotica dominante permaneceu estavel ao longo do audio."
-        },
-        {
-          "rule_id": "S1",
-          "phenomenon": "s_coda",
-          "condition": "palatal_variant_recurrent_and_stable",
-          "effect": "reduce_suspicion_lightly",
-          "weight": -0.04,
-          "explanation": "A realizacao palatal de /s/ em coda apareceu de modo recorrente e estavel."
-        },
-        {
-          "rule_id": "S4",
-          "phenomenon": "s_coda",
-          "condition": "palatalization_in_favoring_context",
-          "effect": "neutral",
+          "rule_id": "G3",
+          "phenomenon": "global",
+          "condition": "insufficient_linguistic_coverage",
+          "effect": "reduce_layer_weight",
           "weight": 0,
-          "explanation": "A palatalizacao de /s/ ocorreu em contexto fonetico favorecedor."
-        },
-        {
-          "rule_id": "G1",
-          "phenomenon": "global",
-          "condition": "multiple_phenomena_stable",
-          "effect": "reduce_suspicion",
-          "weight": -0.1,
-          "explanation": "Os fenomenos fonetico-fonologicos observados mantiveram padrao estavel."
-        },
-        {
-          "rule_id": "G5",
-          "phenomenon": "global",
-          "condition": "high_neural_score_with_consistent_linguistics",
-          "effect": "reduce_suspicion",
-          "weight": -0.1,
-          "explanation": "O score neural esta alto, mas os padroes fonetico-fonologicos foram consistentes."
+          "explanation": "Ha poucos eventos linguistico-foneticos confiaveis para aplicar a camada.",
+          "reason": "coverage_below_minimum"
         }
       ],
       "explanations": [
-        "O apagamento de /r/ final em verbos no infinitivo e plausivel no portugues brasileiro falado.",
-        "A alternancia de /r/ final apareceu sem ruptura localizada clara.",
-        "A variante rotica dominante permaneceu estavel ao longo do audio.",
-        "A realizacao palatal de /s/ em coda apareceu de modo recorrente e estavel.",
-        "A palatalizacao de /s/ ocorreu em contexto fonetico favorecedor.",
-        "Os fenomenos fonetico-fonologicos observados mantiveram padrao estavel.",
-        "O score neural esta alto, mas os padroes fonetico-fonologicos foram consistentes."
+        "Ha poucos eventos linguistico-foneticos confiaveis para aplicar a camada."
       ]
     },
-    "features": {
-      "path": "audio.ogg",
+    "temporal_memory": {
       "available": true,
-      "duration_seconds": 77.79783333333333,
+      "status": "applied",
+      "enabled": true,
+      "attention_threshold": 0.9244173288345336,
+      "baseline": {
+        "median_score": 0.3758993148803711,
+        "mad_score": 0.10846254229545593,
+        "median_rms": 0.05087419971823692,
+        "median_silence_ratio": 0.3807656168937683
+      },
+      "rupture_candidate_count": 0,
+      "rupture_score": 0,
+      "rupture_candidates": [],
+      "explanations": [
+        "A memoria temporal nao encontrou ruptura local relevante."
+      ]
+    },
+    "independent_symbolic": {
+      "score": 0.15,
+      "decision": "insufficient",
+      "confidence": "low",
+      "flags": {
+        "insufficient_evidence": true,
+        "audio_quality_warning": false,
+        "phonetic_pattern_stable": false,
+        "phonetic_disruption": false
+      },
+      "explanations": [
+        "Ha poucos eventos fonetico-fonologicos confiaveis para uma leitura simbolica independente forte."
+      ],
+      "evidence": {
+        "coverage_score": 0,
+        "quality_score": 0,
+        "event_count": 0,
+        "phonetic_consistency_score": 0,
+        "raw_localized_disruption_score": 0,
+        "linguistic_plausibility_score": 0.4
+      }
+    },
+    "features": {
+      "path": "audio.wav",
+      "available": true,
+      "duration_seconds": 11.430041666666666,
       "clip_seconds": 4,
       "analyzed_fraction": 1,
       "source_sample_rate": 48000,
       "target_sample_rate": 16000,
       "channels": 1,
-      "rms_mean": 0.13098126649856567,
-      "rms_std": 0.13098126649856567,
-      "silence_ratio": 0.34340107440948486,
-      "clipping_ratio": 0.0002402057871222496
+      "rms_mean": 0.05025605484843254,
+      "rms_std": 0.05025605484843254,
+      "silence_ratio": 0.45255112648010254,
+      "clipping_ratio": 0
+    }
+  },
+  "independent_symbolic": {
+    "score": 0.15,
+    "decision": "insufficient",
+    "confidence": "low",
+    "flags": {
+      "insufficient_evidence": true,
+      "audio_quality_warning": false,
+      "phonetic_pattern_stable": false,
+      "phonetic_disruption": false
+    },
+    "explanations": [
+      "Ha poucos eventos fonetico-fonologicos confiaveis para uma leitura simbolica independente forte."
+    ],
+    "evidence": {
+      "coverage_score": 0,
+      "quality_score": 0,
+      "event_count": 0,
+      "phonetic_consistency_score": 0,
+      "raw_localized_disruption_score": 0,
+      "linguistic_plausibility_score": 0.4
     }
   },
   "executive_summary": {
-    "title": "Áudio inconclusivo, com sinais linguísticos compatíveis com fala natural",
-    "decision": "inconclusive",
-    "risk_level": "medium",
+    "title": "Áudio real",
+    "decision": "real",
+    "risk_level": "low",
     "confidence": "moderate",
-    "summary": "O áudio foi classificado como inconclusivo. O nível de risco estimado é médio e a confiança da leitura simbólica é moderada. A suspeita neural ficou concentrada em poucos trechos: 5 de 32 janelas. Foram encontrados padrões fonético-fonológicos compatíveis com fala natural. O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos suspeitos para análise contextual.",
+    "summary": "O áudio foi classificado como real. O nível de risco estimado é baixo e a confiança da leitura simbólica é moderada. Nenhuma janela ultrapassou o limite calibrado de áudio fake. A camada fonético-fonológica não teve eventos suficientes para calibrar a decisão. A camada simbólica independente não teve evidência suficiente para confirmar a suspeita neural. Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio.",
     "bullets": [
-      "O áudio foi classificado como inconclusivo.",
-      "O nível de risco estimado é médio e a confiança da leitura simbólica é moderada.",
-      "A suspeita neural ficou concentrada em poucos trechos: 5 de 32 janelas.",
-      "Foram encontrados padrões fonético-fonológicos compatíveis com fala natural.",
-      "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos suspeitos para análise contextual."
+      "O áudio foi classificado como real.",
+      "O nível de risco estimado é baixo e a confiança da leitura simbólica é moderada.",
+      "Nenhuma janela ultrapassou o limite calibrado de áudio fake.",
+      "A camada fonético-fonológica não teve eventos suficientes para calibrar a decisão.",
+      "A camada simbólica independente não teve evidência suficiente para confirmar a suspeita neural.",
+      "Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio."
     ],
-    "recommendation": "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos suspeitos para análise contextual."
+    "recommendation": "Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio."
   }
 }

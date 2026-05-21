@@ -29,6 +29,10 @@ DEFAULT_THRESHOLDS = {
     "temporal_local_jump": 0.16,
     "temporal_mad_multiplier": 2.25,
     "temporal_symbolic_delta": 0.02,
+    "contest_fake_ratio_min": 0.40,
+    "contest_min_consistency_score": 0.75,
+    "contest_max_disruption_score": 0.20,
+    "low_temporal_coverage_max_windows": 3,
     "domain_warning_real_seconds": 8.0,
     "moderate_silence_ratio": 0.35,
     "terminal_segment_margin_seconds": 1.0,
@@ -139,6 +143,10 @@ def _base_flags() -> dict:
         "localized_manipulation_sensitivity": False,
         "temporal_memory_available": False,
         "temporal_memory_rupture_candidate": False,
+        "symbolic_contestation": False,
+        "neural_suspicion_contested": False,
+        "low_temporal_coverage": False,
+        "domain_shift_warning": False,
     }
 
 
@@ -560,6 +568,12 @@ def evaluate_audio_symbolic_rules(
         explanations.append("A classificacao fake ocorreu com margem pequena.")
 
     if segment_summary["count"] >= 2:
+        if segment_summary["count"] <= thresholds["low_temporal_coverage_max_windows"]:
+            flags["low_temporal_coverage"] = True
+            explanations.append("Ha poucas janelas temporais para sustentar uma localizacao confiavel da suspeita.")
+            adjustments.append({"reason": "low_temporal_coverage", "delta": -0.05})
+            symbolic_score -= 0.05
+
         if segment_summary["score_range"] >= thresholds["segment_disagreement_range"]:
             flags["segment_score_disagreement"] = True
             explanations.append("Os scores por segmento variaram bastante ao longo do audio.")
@@ -631,6 +645,8 @@ def evaluate_audio_symbolic_rules(
             if quality_score:
                 explanations.append(f"Qualidade da evidencia fonetica: {quality_score:.2f} em uma escala de 0 a 1.")
 
+    independent_symbolic = evaluate_audio_independent_symbolic(symbolic_features, phonetic_review, flags)
+
     no_phonetic_support = (
         flags["phonetic_coverage_insufficient"]
         or phonetic_status in {"insufficient_coverage", "no_rule_triggered", "unavailable"}
@@ -669,6 +685,58 @@ def evaluate_audio_symbolic_rules(
             delta = thresholds["temporal_symbolic_delta"]
             adjustments.append({"reason": "temporal_memory_rupture_candidate", "delta": delta})
             symbolic_score += delta
+
+    phonetic_consistency_score = _safe_float(phonetic_review.get("phonetic_consistency_score"))
+    localized_disruption_score = _safe_float(phonetic_review.get("localized_disruption_score"))
+    evidence_quality = phonetic_review.get("evidence_quality") or {}
+    classified_event_ratio = _safe_float(evidence_quality.get("classified_event_ratio"))
+    model_key = str(neural_result.get("model_key") or neural_result.get("requested_model") or "")
+    contestation_reasons: list[str] = []
+
+    if p_fake >= threshold and segment_summary["fake_ratio"] >= thresholds["contest_fake_ratio_min"]:
+        if independent_symbolic["decision"] == "natural" and independent_symbolic["score"] <= 0.30:
+            contestation_reasons.append("independent_symbolic_low_suspicion")
+        if flags["phonetic_consistency_support"] and localized_disruption_score <= thresholds["contest_max_disruption_score"]:
+            contestation_reasons.append("phonetic_consistency_without_disruption")
+        if phonetic_status == "insufficient_coverage":
+            contestation_reasons.append("insufficient_independent_linguistic_evidence")
+        if (
+            phonetic_consistency_score >= thresholds["contest_min_consistency_score"]
+            and localized_disruption_score <= thresholds["contest_max_disruption_score"]
+            and classified_event_ratio > 0
+        ):
+            contestation_reasons.append("stable_linguistic_pattern")
+        if flags["domain_mismatch_warning"] or model_key in {"brspeech_sample"}:
+            contestation_reasons.append("model_domain_sensitivity")
+
+    if contestation_reasons:
+        flags["symbolic_contestation"] = True
+        flags["neural_suspicion_contested"] = True
+        explanations.append(
+            "A camada simbolica contestou parte da suspeita neural porque a evidencia independente nao confirmou ruptura forte."
+        )
+        contest_delta = -0.20 if "insufficient_independent_linguistic_evidence" not in contestation_reasons else -0.10
+        adjustments.append(
+            {
+                "reason": "symbolic_contestation",
+                "delta": contest_delta,
+                "evidence": sorted(set(contestation_reasons)),
+            }
+        )
+        symbolic_score += contest_delta
+
+    domain_shift_conditions = [
+        p_fake >= threshold,
+        flags["low_temporal_coverage"],
+        flags["phonetic_coverage_insufficient"] or independent_symbolic.get("decision") in {"insufficient", "natural"},
+        flags["symbolic_contestation"] or flags["possible_end_artifact"] or flags["regional_bias_review"],
+    ]
+    if sum(1 for item in domain_shift_conditions if item) >= 3:
+        flags["domain_shift_warning"] = True
+        flags["domain_mismatch_warning"] = True
+        explanations.append(
+            "O audio pode estar fora do dominio do modelo neural selecionado; a suspeita foi tratada com cautela."
+        )
 
     symbolic_score = max(0.0, min(1.0, symbolic_score))
     active_quality_flags = [
@@ -717,7 +785,128 @@ def evaluate_audio_symbolic_rules(
         "regional_bias_review": regional_bias_review,
         "phonetic_review": phonetic_review,
         "temporal_memory": temporal_memory,
+        "independent_symbolic": independent_symbolic,
         "thresholds": thresholds,
+    }
+
+
+def evaluate_audio_independent_symbolic(
+    symbolic_features: dict,
+    phonetic_review: dict,
+    flags: dict | None = None,
+) -> dict:
+    """Score audio-symbolic evidence without using the selected neural model score."""
+    flags = flags or {}
+    explanations: list[str] = []
+    independent_flags = {
+        "insufficient_evidence": False,
+        "audio_quality_warning": False,
+        "phonetic_pattern_stable": False,
+        "phonetic_disruption": False,
+    }
+    score = 0.15
+
+    if not symbolic_features.get("available", True):
+        return {
+            "score": 0.35,
+            "decision": "insufficient",
+            "confidence": "low",
+            "flags": {**independent_flags, "insufficient_evidence": True},
+            "explanations": ["Nao foi possivel extrair evidencias simbolicas independentes do audio."],
+        }
+
+    if flags.get("high_silence") or flags.get("low_volume") or flags.get("clipped_audio"):
+        independent_flags["audio_quality_warning"] = True
+        explanations.append("Ha sinais de qualidade de audio que reduzem a confiabilidade da leitura independente.")
+        score += 0.05
+    if flags.get("possible_end_artifact"):
+        explanations.append("O trecho final possui sinais acusticos que podem explicar picos localizados.")
+        score = max(0.05, score - 0.05)
+
+    evidence_quality = phonetic_review.get("evidence_quality") or {}
+    coverage_score = _safe_float(phonetic_review.get("coverage_score"))
+    quality_score = _safe_float(evidence_quality.get("quality_score"))
+    consistency_score = _safe_float(phonetic_review.get("phonetic_consistency_score"))
+    raw_disruption_score = _safe_float(phonetic_review.get("raw_localized_disruption_score"))
+    plausibility_score = _safe_float(phonetic_review.get("linguistic_plausibility_score"))
+    event_count = int(phonetic_review.get("event_count") or 0)
+    localized_disruption = phonetic_review.get("localized_disruption") or {}
+    raw_disruption_count = int(localized_disruption.get("raw_disruption_count") or 0)
+    phenomena_count = len(localized_disruption.get("phenomena") or [])
+    strong_evidence = coverage_score >= 0.60 and quality_score >= 0.55 and event_count >= 6
+    repeated_disruption = raw_disruption_count >= 2 or phenomena_count >= 2
+
+    if not phonetic_review.get("available") or event_count == 0 or coverage_score < 0.30:
+        independent_flags["insufficient_evidence"] = True
+        explanations.append("Ha poucos eventos fonetico-fonologicos confiaveis para uma leitura simbolica independente forte.")
+        confidence = "low" if event_count == 0 else "moderate"
+    else:
+        confidence = "high" if quality_score >= 0.70 and coverage_score >= 0.70 else "moderate"
+
+        if raw_disruption_score >= 0.50 and strong_evidence and repeated_disruption:
+            independent_flags["phonetic_disruption"] = True
+            explanations.append("Foram encontrados sinais independentes de ruptura fonetico-fonologica local.")
+            score += 0.35
+        elif raw_disruption_score >= 0.35 and strong_evidence:
+            independent_flags["phonetic_disruption"] = True
+            explanations.append("A camada independente encontrou variacao fonetica localizada, ainda sem forca conclusiva.")
+            score += 0.15
+        elif raw_disruption_score >= 0.20:
+            explanations.append("Foi observada variacao fonetica leve, tratada como variacao natural ou evidencia fraca.")
+            score += 0.03
+
+        if consistency_score and consistency_score < 0.55 and strong_evidence:
+            independent_flags["phonetic_disruption"] = True
+            explanations.append("Os eventos foneticos apresentaram baixa consistencia interna.")
+            score += 0.15
+        elif consistency_score and consistency_score < 0.70 and strong_evidence:
+            explanations.append("A consistencia fonetica ficou moderada, sem configurar ruptura forte.")
+            score += 0.04
+
+        if (
+            consistency_score >= 0.80
+            and raw_disruption_score <= 0.20
+            and quality_score >= 0.50
+        ):
+            independent_flags["phonetic_pattern_stable"] = True
+            explanations.append("Os padroes fonetico-fonologicos independentes apareceram estaveis.")
+            score -= 0.10
+
+        if plausibility_score >= 0.80 and raw_disruption_score <= 0.20:
+            explanations.append("A leitura linguistica independente favorece fala natural.")
+            score -= 0.05
+
+    score = max(0.0, min(1.0, score))
+    if independent_flags["insufficient_evidence"]:
+        decision = "insufficient"
+    elif score >= 0.60:
+        decision = "suspicious"
+    elif score <= 0.25:
+        decision = "natural"
+    else:
+        decision = "inconclusive"
+
+    if not explanations:
+        explanations.append("Nenhum sinal simbolico independente forte de manipulacao foi encontrado.")
+
+    return {
+        "score": score,
+        "decision": decision,
+        "confidence": confidence,
+        "flags": independent_flags,
+        "explanations": explanations,
+        "evidence": {
+            "coverage_score": coverage_score,
+            "quality_score": quality_score,
+            "event_count": event_count,
+            "phonetic_consistency_score": consistency_score,
+            "raw_localized_disruption_score": raw_disruption_score,
+            "raw_disruption_count": raw_disruption_count,
+            "phenomena_count": phenomena_count,
+            "strong_evidence": strong_evidence,
+            "repeated_disruption": repeated_disruption,
+            "linguistic_plausibility_score": plausibility_score,
+        },
     }
 
 
@@ -727,6 +916,9 @@ def combine_audio_decision(neural_result: dict, symbolic_result: dict) -> dict:
     threshold = _safe_float(neural_result.get("threshold"), 0.5)
     symbolic_score = _safe_float(symbolic_result.get("symbolic_score"), 0.5)
     flags = symbolic_result.get("flags") or {}
+    independent_symbolic = symbolic_result.get("independent_symbolic") or {}
+    independent_score = _safe_float(independent_symbolic.get("score"), 0.5)
+    independent_decision = independent_symbolic.get("decision")
 
     final_score = max(0.0, min(1.0, (0.70 * p_fake) + (0.30 * symbolic_score)))
 
@@ -740,8 +932,25 @@ def combine_audio_decision(neural_result: dict, symbolic_result: dict) -> dict:
     elif flags.get("near_threshold"):
         decision = "inconclusive"
         risk_level = "medium"
+    elif flags.get("low_temporal_coverage") and decision_score >= threshold:
+        decision = "inconclusive"
+        risk_level = "medium"
+        flags["symbolic_contestation"] = True
+        flags["neural_suspicion_contested"] = True
     elif flags.get("isolated_suspicious_segment"):
         decision = "suspicious_segment"
+        risk_level = "medium"
+    elif (
+        decision_score >= threshold
+        and independent_decision in {"natural", "insufficient"}
+        and independent_score <= 0.35
+    ):
+        decision = "inconclusive"
+        risk_level = "medium"
+        flags["symbolic_contestation"] = True
+        flags["neural_suspicion_contested"] = True
+    elif flags.get("symbolic_contestation") and decision_score >= threshold:
+        decision = "inconclusive"
         risk_level = "medium"
     elif decision_score >= threshold:
         decision = "fake"
@@ -772,6 +981,7 @@ def combine_audio_decision(neural_result: dict, symbolic_result: dict) -> dict:
         "regional_bias_review": symbolic_result.get("regional_bias_review", {}),
         "phonetic_review": symbolic_result.get("phonetic_review", {}),
         "temporal_memory": symbolic_result.get("temporal_memory", {}),
+        "independent_symbolic": independent_symbolic,
     }
 
 
@@ -785,6 +995,7 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
     segment_diagnostics = symbolic.get("segment_diagnostics") or audio_summary.get("segment_diagnostics") or {}
     diagnostic_summary = segment_diagnostics.get("summary") or {}
     phonetic_review = symbolic.get("phonetic_review") or {}
+    independent_symbolic = symbolic.get("independent_symbolic") or audio_summary.get("independent_symbolic") or {}
     temporal_memory = symbolic.get("temporal_memory") or audio_summary.get("temporal_memory") or {}
     ground_truth = audio_summary.get("ground_truth") or {}
     flags = symbolic.get("flags") or {}
@@ -815,6 +1026,10 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
         title = "Áudio inconclusivo, com sinais linguísticos compatíveis com fala natural"
     elif decision == "suspicious_segment":
         title = "Suspeita localizada em trecho específico"
+    if flags.get("symbolic_contestation"):
+        title = "Suspeita neural contestada pela revisão simbólica"
+    if flags.get("domain_shift_warning"):
+        title = "Suspeita neural com alerta de domínio"
 
     lines = [
         f"O áudio foi classificado como {decision_labels.get(decision, decision)}.",
@@ -831,6 +1046,10 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
     if count > 0:
         if fake_count == 0:
             lines.append("Nenhuma janela ultrapassou o limite calibrado de áudio fake.")
+        elif flags.get("low_temporal_coverage"):
+            lines.append(
+                f"A suspeita apareceu em {fake_count} de {count} janelas, mas ha pouca cobertura temporal para localizar manipulacao com confianca."
+            )
         elif diagnostic_summary.get("terminal_suspicious_count", 0) > 0:
             lines.append(
                 f"A suspeita neural ficou concentrada em {fake_count} de {count} janelas, principalmente no final do áudio."
@@ -881,6 +1100,29 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
             "A memória temporal encontrou trecho(s) que destoam do comportamento interno do próprio áudio."
         )
 
+    if independent_symbolic:
+        independent_decision = independent_symbolic.get("decision")
+        independent_score = _safe_float(independent_symbolic.get("score"))
+        if independent_decision == "natural":
+            lines.append(
+                f"A camada simbólica independente ficou baixa ({independent_score * 100:.1f}%) e favorece fala natural."
+            )
+        elif independent_decision == "suspicious":
+            lines.append(
+                f"A camada simbólica independente também encontrou sinais suspeitos ({independent_score * 100:.1f}%)."
+            )
+        elif independent_decision == "insufficient":
+            lines.append("A camada simbólica independente não teve evidência suficiente para confirmar a suspeita neural.")
+
+    if flags.get("symbolic_contestation"):
+        lines.append(
+            "A revisão simbólica contestou parte da suspeita neural porque os sinais independentes não confirmaram ruptura forte."
+        )
+    if flags.get("domain_shift_warning"):
+        lines.append(
+            "Há alerta de possível diferença de domínio entre este áudio e os dados usados pelo modelo neural selecionado."
+        )
+
     if ground_truth.get("available"):
         overlap = ground_truth.get("overlap") or {}
         if overlap.get("localized_hit"):
@@ -888,7 +1130,17 @@ def generate_audio_executive_summary(audio_summary: dict) -> dict:
         else:
             lines.append("No teste controlado, os picos detectados não coincidiram claramente com o trecho manipulado.")
 
-    if decision in {"inconclusive", "suspicious_segment"} or flags.get("terminal_suspicious_segments"):
+    if flags.get("domain_shift_warning"):
+        recommendation = (
+            "O sistema mantém a análise como inconclusiva: a suspeita neural pode refletir domínio de gravação, "
+            "cobertura temporal baixa ou evidência simbólica insuficiente."
+        )
+    elif flags.get("symbolic_contestation"):
+        recommendation = (
+            "O sistema mantém a análise como inconclusiva: a suspeita veio do modelo neural selecionado, "
+            "mas a camada simbólica não encontrou suporte independente suficiente para confirmar fake."
+        )
+    elif decision in {"inconclusive", "suspicious_segment"} or flags.get("terminal_suspicious_segments"):
         if flags.get("terminal_suspicious_segments"):
             recommendation = "O sistema mantém a decisão como inconclusiva e destaca automaticamente os trechos finais como possível ruptura para análise contextual."
         else:

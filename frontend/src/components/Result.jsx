@@ -20,6 +20,12 @@ const MODEL_OPTIONS = [
   { value: 'alexnet', label: 'AlexNet (auto)' },
 ];
 
+const AUDIO_MODEL_OPTIONS = [
+  { value: 'auto', label: 'Automatico (padrao atual)' },
+  { value: 'default', label: 'FakeBrAccent codec equalizado' },
+  { value: 'brspeech_sample', label: 'BRSpeech-DF amostra (experimental)' },
+];
+
 function Result({
   result,
   previewUrl,
@@ -33,6 +39,7 @@ function Result({
 }) {
   const [selectedModel, setSelectedModel] = useState('auto');
   const [rulesExpanded, setRulesExpanded] = useState(false);
+  const reanalysisModelOptions = analysisMode === 'audio' ? AUDIO_MODEL_OPTIONS : MODEL_OPTIONS;
 
   const getRiskConfig = (level, pFake) => {
     const percent = pFake !== null ? pFake * 100 : null;
@@ -89,6 +96,7 @@ function Result({
     .map(([key]) => key);
 
   const audioSymbolic = result.audio_summary?.symbolic || null;
+  const audioIndependentSymbolic = audioSymbolic?.independent_symbolic || result.audio_summary?.independent_symbolic || null;
   const audioSegmentSummary = audioSymbolic?.segment_summary || result.audio_summary?.segment_summary || null;
   const audioTranscript = result.audio_summary?.transcript || null;
   const audioSegments = Array.isArray(result.audio_summary?.segments) ? result.audio_summary.segments : [];
@@ -194,6 +202,10 @@ function Result({
     localized_manipulation_sensitivity: 'Sensibilidade localizada',
     temporal_memory_available: 'Memoria temporal',
     temporal_memory_rupture_candidate: 'Variacao temporal',
+    symbolic_contestation: 'Contestacao simbolica',
+    neural_suspicion_contested: 'Suspeita neural contestada',
+    low_temporal_coverage: 'Cobertura temporal baixa',
+    domain_shift_warning: 'Alerta de dominio',
   };
 
   const confidenceLabels = {
@@ -237,6 +249,11 @@ function Result({
       : null;
 
     const metrics = phoneticReview ? [
+      ...(audioIndependentSymbolic ? [{
+        label: 'Simbolico independente',
+        value: Number(audioIndependentSymbolic.score) || 0,
+        inverted: true,
+      }] : []),
       {
         label: 'Cobertura fonetica',
         value: Number(phoneticReview.coverage_score) || 0,
@@ -295,7 +312,7 @@ function Result({
       validation,
       temporalMemory,
     };
-  }, [audioSymbolic, result.audio_summary]);
+  }, [audioIndependentSymbolic, audioSymbolic, result.audio_summary]);
 
   const sortedFrameResults = [...(result.frame_results || [])]
     .sort((a, b) => a.index - b.index)
@@ -980,7 +997,6 @@ function Result({
           <LivenessAnalysisCard livenessAnalysis={livenessAnalysis} />
         )}
 
-        {analysisMode !== 'audio' && (
         <div className="reanalyze-section">
           <h3>Reanalisar com outro modelo</h3>
           <div className="reanalyze-controls">
@@ -989,7 +1005,7 @@ function Result({
               onChange={(e) => setSelectedModel(e.target.value)}
               disabled={reanalysisLoading}
             >
-              {MODEL_OPTIONS.map((option) => (
+              {reanalysisModelOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
@@ -1004,7 +1020,6 @@ function Result({
           </div>
           {reanalysisError && <p className="reanalyze-error">{reanalysisError}</p>}
         </div>
-        )}
 
         {sortedComparison.length > 0 && (
           <div className="comparison-section">

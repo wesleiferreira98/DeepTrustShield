@@ -101,6 +101,7 @@ ALLOWED_AUDIO_EXTENSIONS = {".flac", ".wav", ".mp3", ".m4a", ".ogg"}
 async def analyze_audio(
     file: UploadFile = File(...),
     use_temporal_memory: bool = Form(True),
+    target_audio_model: str = Form("default"),
     db: Session = Depends(get_db),
 ):
     """Start deepfake analysis on one audio file."""
@@ -145,6 +146,7 @@ async def analyze_audio(
         job_id,
         audio_path,
         use_temporal_memory,
+        target_audio_model,
         job_timeout="15m",
     )
 

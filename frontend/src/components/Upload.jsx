@@ -65,6 +65,11 @@ const CAMERA_CONSTRAINTS = [
   },
 ];
 
+const AUDIO_MODEL_OPTIONS = [
+  { value: 'default', label: 'FakeBrAccent codec equalizado' },
+  { value: 'brspeech_sample', label: 'BRSpeech-DF amostra (experimental)' },
+];
+
 const SPOOF_REASON_LABELS = {
   planar_motion_without_internal_face_change: 'movimento parece plano, sem mudanca interna do rosto',
   screen_or_reflection_glare: 'brilho/reflexo suspeito de tela',
@@ -263,6 +268,7 @@ function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejecte
   const [mode, setMode] = useState('image');
   const [isDragging, setIsDragging] = useState(false);
   const [targetModel, setTargetModel] = useState('auto');
+  const [targetAudioModel, setTargetAudioModel] = useState('default');
   const [useTemporalMemory, setUseTemporalMemory] = useState(true);
   const [autoStartTried, setAutoStartTried] = useState(false);
 
@@ -1287,20 +1293,20 @@ function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejecte
 
     const file = e.dataTransfer.files[0];
     if (file && mode === 'audio' && (file.type.startsWith('audio/') || /\.(flac|wav|mp3|m4a|ogg)$/i.test(file.name))) {
-      onAudioUpload(file, { useTemporalMemory });
+      onAudioUpload(file, { useTemporalMemory, targetAudioModel });
     } else if (file && file.type.startsWith('image/')) {
       onImageUpload(file, targetModel);
     }
-  }, [mode, onAudioUpload, onImageUpload, targetModel, useTemporalMemory]);
+  }, [mode, onAudioUpload, onImageUpload, targetAudioModel, targetModel, useTemporalMemory]);
 
   const handleFileSelect = useCallback((e) => {
     const file = e.target.files[0];
     if (file && mode === 'audio') {
-      onAudioUpload(file, { useTemporalMemory });
+      onAudioUpload(file, { useTemporalMemory, targetAudioModel });
     } else if (file) {
       onImageUpload(file, targetModel);
     }
-  }, [mode, onAudioUpload, onImageUpload, targetModel, useTemporalMemory]);
+  }, [mode, onAudioUpload, onImageUpload, targetAudioModel, targetModel, useTemporalMemory]);
 
   return (
     <div className="upload-container">
@@ -1359,6 +1365,19 @@ function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejecte
 
       {mode === 'audio' && (
         <div className="model-target-card">
+          <label htmlFor="target-audio-model">Modelo de audio</label>
+          <select
+            id="target-audio-model"
+            value={targetAudioModel}
+            onChange={(e) => setTargetAudioModel(e.target.value)}
+          >
+            {AUDIO_MODEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <p className="toggle-help">
+            Escolha qual detector neural sera usado antes da revisao simbolica.
+          </p>
           <label htmlFor="temporal-memory-toggle">Memoria temporal simbolica</label>
           <div className="inline-toggle-row">
             <input

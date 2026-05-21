@@ -10,7 +10,7 @@ import math
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.config import config
+from app.config import config, get_audio_model_config
 from app.pipeline.face_detection import detect_faces
 from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
@@ -135,7 +135,12 @@ def calculate_audio_risk_level(p_fake: float, threshold: float) -> str:
     return "high"
 
 
-def process_deepfake_audio(job_id: str, audio_path: str, use_temporal_memory: bool = True):
+def process_deepfake_audio(
+    job_id: str,
+    audio_path: str,
+    use_temporal_memory: bool = True,
+    target_audio_model: str = "default",
+):
     """Pipeline for deepfake detection from one audio file."""
     db = get_db()
     start_time = time.time()
@@ -148,11 +153,17 @@ def process_deepfake_audio(job_id: str, audio_path: str, use_temporal_memory: bo
 
         update_stage(db, job_id, "preprocessing")
         update_stage(db, job_id, "model_inference")
+        audio_model_config = get_audio_model_config(target_audio_model)
         audio_result = run_audio_inference(
             audio_path,
-            config.AUDIO_MODEL_PATH,
-            config.AUDIO_MODEL_SUMMARY_PATH,
+            audio_model_config["path"],
+            audio_model_config["summary_path"],
         )
+        audio_result["requested_model"] = target_audio_model
+        audio_result["model_key"] = audio_model_config["key"]
+        audio_result["model_label"] = audio_model_config["label"]
+        if audio_model_config["key"] != "default":
+            audio_result["model_version"] = f"{audio_result.get('model_version', 'audio_deepfake_v1')}:{audio_model_config['key']}"
 
         update_stage(db, job_id, "calibrating_score")
         p_fake = audio_result["p_fake"]
@@ -220,6 +231,12 @@ def process_deepfake_audio(job_id: str, audio_path: str, use_temporal_memory: bo
         audio_summary = {
             "threshold": threshold,
             "decision": symbolic_decision["decision"],
+            "model": {
+                "requested_model": target_audio_model,
+                "model_key": audio_result.get("model_key"),
+                "model_label": audio_result.get("model_label"),
+                "model_version": audio_result.get("model_version"),
+            },
             "audio_info": audio_result.get("audio_info", {}),
             "segment_summary": audio_result.get("segment_summary", {}),
             "segments": audio_result.get("segments", []),
@@ -245,6 +262,7 @@ def process_deepfake_audio(job_id: str, audio_path: str, use_temporal_memory: bo
                 **symbolic_decision,
                 "features": symbolic_features,
             },
+            "independent_symbolic": symbolic_decision.get("independent_symbolic", {}),
         }
         audio_summary["executive_summary"] = generate_audio_executive_summary(audio_summary)
         save_artifact(db, job_id, original_meta=json.dumps({"audio_summary": audio_summary}))
