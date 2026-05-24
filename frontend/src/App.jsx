@@ -3,6 +3,9 @@ import Upload from './components/Upload'
 import AnalysisPanel from './components/AnalysisPanel'
 import Result from './components/Result'
 import LivenessFailureResult from './components/LivenessFailureResult'
+import Dashboard from './components/Dashboard'
+import History from './components/History'
+import Sidebar from './components/Sidebar'
 import { analyzeAudio, analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
 import './App.css'
 
@@ -11,6 +14,7 @@ const POLL_INTERVAL_MS = 700
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function App() {
+  const [activeTab, setActiveTab] = useState('analysis') // analysis | dashboard | history
   const [state, setState] = useState('idle') // idle | uploading | analyzing | done | error
   const [jobId, setJobId] = useState(null)
   const [analysisMode, setAnalysisMode] = useState('image')
@@ -229,71 +233,73 @@ function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="logo">
-          <span className="logo-icon">�️</span>
-          <span className="logo-text">DeepTrustShield</span>
-        </div>
-        <p className="tagline">Proteção contra Deepfakes com IA</p>
-      </header>
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <main className="main">
-        {state === 'idle' && (
-          <Upload
-            onImageUpload={handleImageUpload}
-            onAudioUpload={handleAudioUpload}
-            onVideoUpload={handleVideoUpload}
-            onLivenessRejected={handleLivenessRejected}
-          />
+      <div className="app-body">
+        {activeTab === 'dashboard' ? (
+          <main className="main main-page">
+            <Dashboard />
+          </main>
+        ) : activeTab === 'history' ? (
+          <main className="main main-page">
+            <History />
+          </main>
+        ) : (
+          <main className="main">
+            {state === 'idle' && (
+              <Upload
+                onImageUpload={handleImageUpload}
+                onAudioUpload={handleAudioUpload}
+                onVideoUpload={handleVideoUpload}
+                onLivenessRejected={handleLivenessRejected}
+              />
+            )}
+
+            {(state === 'uploading' || state === 'analyzing') && (
+              <AnalysisPanel
+                status={status}
+                previewUrl={previewUrl}
+                isUploading={state === 'uploading'}
+                analysisMode={analysisMode}
+              />
+            )}
+
+            {(state === 'done' || state === 'error') && result && (
+              <Result
+                result={result}
+                previewUrl={previewUrl}
+                livenessAnalysis={livenessAnalysis}
+                status={status}
+                analysisMode={analysisMode}
+                onReset={handleReset}
+                onReanalyze={handleReanalyze}
+                comparisonResults={comparisonResults}
+                reanalysisLoading={reanalysisLoading}
+                reanalysisError={reanalysisError}
+              />
+            )}
+
+            {state === 'liveness_failed' && (
+              <LivenessFailureResult
+                previewUrl={previewUrl}
+                livenessAnalysis={livenessAnalysis}
+                message={livenessFailureMessage}
+                onReset={handleReset}
+              />
+            )}
+
+            {state === 'error' && !result && (
+              <div className="error-card">
+                <h2>❌ Erro</h2>
+                <p>{error || 'Ocorreu um erro inesperado'}</p>
+                <button onClick={handleReset} className="btn-primary">
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+          </main>
         )}
-
-        {(state === 'uploading' || state === 'analyzing') && (
-          <AnalysisPanel
-            status={status}
-            previewUrl={previewUrl}
-            isUploading={state === 'uploading'}
-            analysisMode={analysisMode}
-          />
-        )}
-
-        {(state === 'done' || state === 'error') && result && (
-          <Result
-            result={result}
-            previewUrl={previewUrl}
-            livenessAnalysis={livenessAnalysis}
-            status={status}
-            analysisMode={analysisMode}
-            onReset={handleReset}
-            onReanalyze={handleReanalyze}
-            comparisonResults={comparisonResults}
-            reanalysisLoading={reanalysisLoading}
-            reanalysisError={reanalysisError}
-          />
-        )}
-
-        {state === 'liveness_failed' && (
-          <LivenessFailureResult
-            previewUrl={previewUrl}
-            livenessAnalysis={livenessAnalysis}
-            message={livenessFailureMessage}
-            onReset={handleReset}
-          />
-        )}
-
-        {state === 'error' && !result && (
-          <div className="error-card">
-            <h2>❌ Erro</h2>
-            <p>{error || 'Ocorreu um erro inesperado'}</p>
-            <button onClick={handleReset} className="btn-primary">
-              Tentar novamente
-            </button>
-          </div>
-        )}
-      </main>
-
-      <footer className="footer">
-        <p>MVP v1.0 • EfficientNet-B0</p>
-      </footer>
+      </div>
     </div>
   )
 }

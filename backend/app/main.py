@@ -10,12 +10,13 @@ import time
 from redis import Redis
 
 from app.config import get_settings
-from app.api import deepfake, deepfake_audio, deepfake_video, liveness
-from app.db.database import engine, Base
+from app.api import deepfake, deepfake_audio, deepfake_video, liveness, stats, history
+from app.db.database import engine, Base, run_migrations
 from app.services.retention_service import cleanup_expired_data
 
-# Create tables
+# Create tables then apply incremental migrations
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 settings = get_settings()
 
@@ -112,6 +113,8 @@ app.include_router(deepfake.router, prefix="/v1/deepfake/image", tags=["deepfake
 app.include_router(deepfake_video.router, prefix="/v1/deepfake/video", tags=["deepfake-video"])
 app.include_router(deepfake_audio.router, prefix="/v1/deepfake/audio", tags=["deepfake-audio"])
 app.include_router(liveness.router, prefix="/v1/liveness", tags=["liveness"])
+app.include_router(stats.router,   prefix="/v1/stats",   tags=["stats"])
+app.include_router(history.router, prefix="/v1/history", tags=["history"])
 
 
 @app.on_event("startup")

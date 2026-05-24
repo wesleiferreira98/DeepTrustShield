@@ -135,3 +135,34 @@ export async function getResult(jobId, mode = 'image') {
 export function getArtifactUrl(jobId, name) {
   return `${IMAGE_API_BASE}/artifacts/${jobId}/${name}`;
 }
+
+export async function getHistory({ mode, days, limit = 20, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit, offset })
+  if (mode)      params.set('mode', mode)
+  if (days > 0)  params.set('days', days)
+
+  const response = await fetch(`/v1/history?${params}`)
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.detail || 'Erro ao buscar histórico')
+  }
+  return response.json()
+}
+
+export async function getStats() {
+  const response = await fetch('/v1/stats/summary');
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Erro ao buscar estatísticas');
+  }
+  return response.json();
+}
+
+export async function getModelStats() {
+  const response = await fetch('/v1/stats/models');
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Erro ao buscar métricas dos modelos');
+  }
+  return response.json();
+}

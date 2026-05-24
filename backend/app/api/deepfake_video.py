@@ -103,6 +103,7 @@ async def analyze_video_frames(
 
     job = Job(
         id=job_id,
+        mode="video",
         stage=JobStage.PENDING,
         progress=0,
         original_path=frame_paths[0],

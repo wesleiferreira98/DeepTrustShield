@@ -133,6 +133,7 @@ async def analyze_audio(
 
     job = Job(
         id=job_id,
+        mode="audio",
         stage=JobStage.PENDING,
         progress=0,
         original_path=audio_path,

@@ -7,8 +7,9 @@ from app.db.database import Base
 
 class Job(Base):
     __tablename__ = "jobs"
-    
+
     id = Column(String(36), primary_key=True)
+    mode = Column(String(10), default="image", nullable=True)
     stage = Column(String(50), default="pending")
     progress = Column(Integer, default=0)
     original_path = Column(Text)
