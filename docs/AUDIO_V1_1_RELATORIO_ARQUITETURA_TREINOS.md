@@ -20,15 +20,15 @@ O fluxo atual é:
 
 Parâmetros principais da representação:
 
-| Parâmetro | Valor atual |
-|---|---:|
-| Taxa de amostragem | 16 kHz |
-| Janela neural | 4 segundos |
-| Número de bandas Mel | 80 |
-| `n_fft` | 1024 |
-| `hop_length` | 256 |
-| `win_length` | 1024 |
-| Escala | log-Mel |
+| Parâmetro            | Valor atual |
+| --------------------- | ----------: |
+| Taxa de amostragem    |      16 kHz |
+| Janela neural         |  4 segundos |
+| Número de bandas Mel |          80 |
+| `n_fft`             |        1024 |
+| `hop_length`        |         256 |
+| `win_length`        |        1024 |
+| Escala                |     log-Mel |
 
 Na inferência, o áudio é analisado por janelas ao longo do tempo. Isso permite identificar se a suspeita está distribuída pelo áudio inteiro ou concentrada em trechos específicos.
 
@@ -119,6 +119,33 @@ Esse treino reduziu a capacidade do modelo de identificar o domínio, o que é d
 
 ## 4. Conjuntos de dados usados
 
+### 4.0. Manifestos
+
+Cada conjunto de dados é representado por um arquivo CSV chamado manifesto. O manifesto é a única fonte de verdade que o pipeline de treino consome: ele não varre diretórios de áudio diretamente, apenas lê as linhas do CSV.
+
+Isso foi implementado assim por três razões práticas:
+
+1. **Mistura controlada de bases heterogêneas.** BRSpeech, FakeBrAccent, CORAA e coleta própria têm estruturas diferentes. O manifesto normaliza tudo em um esquema único antes do treino.
+2. **Rastreabilidade por janela.** Como o modelo treina em janelas de 4 segundos, cada linha do manifesto pode representar um trecho de um arquivo maior, não o arquivo inteiro. Os campos `start` e `end` apontam o intervalo exato dentro do áudio original.
+3. **Separação de splits por falante.** O campo `speaker_id` é usado para garantir que o mesmo falante não apareça ao mesmo tempo em `train` e `test`. Sem isso, o modelo poderia memorizar a voz em vez de aprender a detectar manipulação.
+
+A estrutura base de cada linha do manifesto é:
+
+| Campo | Descrição |
+|---|---|
+| `audio_path` | Caminho absoluto para o arquivo de áudio |
+| `split` | Partição: `train`, `val` ou `test` |
+| `label` | Rótulo da janela: `real` ou `fake` |
+| `source` | Base de origem (ex.: `coleta_real`, `brspeech_df`) |
+| `domain` | Agrupamento acústico usado no treino adversarial (ex.: `fala_espontanea`, `tts_formal_limpo`) |
+| `speaker_id` | Identificador do falante para estratificação de splits |
+| `start` / `end` | Início e fim em segundos da janela dentro do arquivo; vazio significa o arquivo inteiro |
+| `file_label` | Rótulo do arquivo completo, pode diferir de `label` quando a manipulação é localizada |
+| `manipulation_type` | Tipo de manipulação aplicada (`splice_other`, `silence`, `pitch`, etc.) ou `none` |
+| `ground_truth_path` | Caminho para o áudio original antes da manipulação, quando disponível |
+
+Os manifestos mistos são gerados pelo script `scripts/build_audio_v11_mixed_manifest.py`, que amostra cada base com cotas configuráveis, aplica a estratificação por falante e grava o CSV final.
+
 ### BRSpeech-DF
 
 Base brasileira com exemplos bonafide e spoof. Foi usada para ampliar a quantidade de exemplos supervisionados de áudio real e fake.
@@ -128,6 +155,13 @@ Observação atual: o modelo tem bom desempenho dentro desse domínio, mas a bas
 ### FakeBrAccent-D com equalização de codec
 
 Base utilizada nos primeiros ciclos da V1, com foco em sotaques e variações de fala em português brasileiro. Também foi utilizada uma versão com tratamento de codec para reduzir atalhos simples de compressão.
+
+A equalização é feita pelo script `scripts/equalize_audio_codec.py`. Para cada áudio do manifesto, o processo ocorre em duas etapas via ffmpeg:
+
+1. O arquivo original é recodificado para MP3 mono 16 kHz a 96 kbps (`libmp3lame`).
+2. O MP3 intermediário é decodificado de volta para WAV PCM 16-bit mono 16 kHz.
+
+O objetivo não é melhorar a qualidade, mas impor os mesmos artefatos de compressão MP3 em todos os exemplos. Sem isso, o modelo pode aprender que áudio fake tende a ser mais limpo (gerado diretamente como WAV) enquanto áudio real tende a carregar ruído de compressão, usando esse atalho em vez de aprender sinais de manipulação.
 
 Observação atual: segue útil como parte da mistura, mas não é suficiente para resolver generalização em áudio espontâneo.
 
@@ -154,6 +188,48 @@ Observação atual: a coleta é o ponto mais importante para aproximar o modelo 
 
 ## 5. Resultados recentes
 
+### 5.0. Métricas utilizadas
+
+Dois indicadores principais aparecem nas tabelas de pontos críticos por fonte:
+
+**FPR False Positive Rate (Taxa de Falso Positivo)**
+
+Proporção de áudios reais classificados incorretamente como fake.
+
+```
+FPR = FP / (FP + TN)
+```
+
+No projeto, um FPR alto em uma fonte como `coleta_real` significa que o modelo está marcando áudios genuínos como suspeitos. Isso é o problema mais crítico atual, pois gera alertas sem fundamento em áudios legítimos.
+
+**FNR  False Negative Rate (Taxa de Falso Negativo)**
+
+Proporção de áudios fake que passaram sem ser detectados, ou seja, foram classificados como reais.
+
+```
+FNR = FN / (FN + TP)
+```
+
+No projeto, um FNR alto em uma fonte como `coleta_manipulated_strong` significa que manipulações reais escaparam da detecção.
+
+**FPR de atenção**
+
+O pipeline usa dois limiares distintos: um limiar de decisão, para a classificação final do áudio como real, fake ou inconclusivo, e um limiar de atenção, mais baixo, para marcar janelas suspeitas sem exigir certeza suficiente para a decisão final.
+
+O limiar de atenção é calibrado pela função `find_attention_threshold` no script de treino. Ela varre todos os valores de probabilidade possíveis e escolhe o menor limiar que ainda garante pelo menos 90% de recuperação dos fakes (`--attention-min-recall 0.90`). Entre todos os limiares que atingem essa cobertura mínima, o algoritmo escolhe o que produz o menor FPR.
+
+O **FPR de atenção** é o FPR resultante nesse limiar mais sensível. Como o limiar de atenção é intencionalmente mais baixo do que o de decisão, ele flageia mais janelas e, por consequência, tende a ter um FPR mais alto do que o limiar de decisão. Esse número indica o custo em falsos positivos de manter a cobertura mínima de 90% sobre fakes.
+
+**Test F1 calibrado e Test Acc calibrado**
+
+As métricas sem sufixo (Test F1, Test Acc) são calculadas com limiar fixo em 0,5. As versões calibradas usam um limiar ajustado, encontrado pela função `find_best_threshold` aplicada ao conjunto de validação: ela varre todos os valores de probabilidade gerados pelo modelo na validação e escolhe o limiar que maximiza o F1 nesse conjunto. Esse limiar é então aplicado ao conjunto de teste para gerar as métricas calibradas.
+
+A diferença prática é que 0,5 é arbitrário. Se o modelo foi treinado com classes desbalanceadas ou produz probabilidades concentradas acima ou abaixo de 0,5, o limiar ótimo pode ser bem diferente. As métricas calibradas refletem o desempenho real quando o limiar é ajustado para o melhor ponto de operação encontrado nos dados de validação.
+
+O objetivo ideal é manter FNR baixo (não deixar passar fakes) sem elevar demais o FPR (não acusar áudios reais). As tabelas abaixo mostram por fonte onde cada modelo ainda desequilibra esse tradeoff.
+
+---
+
 ### Modelo misto com coleta 77
 
 Checkpoint:
@@ -164,20 +240,20 @@ audio_deepfake_v1_1_mixed_coraa_v2_coleta77_cnn
 
 Resultado agregado:
 
-| Métrica | Valor |
-|---|---:|
-| Test AUC | 0.9319 |
-| Test F1 | 0.8323 |
-| Test Acc | 0.8330 |
-| Test F1 calibrado | 0.9070 |
+| Métrica           |  Valor |
+| ------------------ | -----: |
+| Test AUC           | 0.9319 |
+| Test F1            | 0.8323 |
+| Test Acc           | 0.8330 |
+| Test F1 calibrado  | 0.9070 |
 | Test Acc calibrado | 0.8964 |
-| FPR de atenção | 0.1186 |
+| FPR de atenção   | 0.1186 |
 
 Ponto crítico:
 
-| Fonte | FPR | FNR |
-|---|---:|---:|
-| `coleta_real` | 0.9091 | 0.0000 |
+| Fonte                         |    FPR |    FNR |
+| ----------------------------- | -----: | -----: |
+| `coleta_real`               | 0.9091 | 0.0000 |
 | `coleta_manipulated_strong` | 0.0000 | 0.0455 |
 
 Leitura: o modelo detecta bem a coleta manipulada, mas ainda marca muitos áudios reais de coleta como fake.
@@ -192,22 +268,22 @@ audio_deepfake_v1_1_mixed_coraa_v2_coleta77_domain_adv025_acoustic_cnn
 
 Resultado agregado:
 
-| Métrica | Valor |
-|---|---:|
-| Test AUC | 0.9586 |
-| Test F1 | 0.8911 |
-| Test Acc | 0.8858 |
-| Test F1 calibrado | 0.9087 |
+| Métrica           |  Valor |
+| ------------------ | -----: |
+| Test AUC           | 0.9586 |
+| Test F1            | 0.8911 |
+| Test Acc           | 0.8858 |
+| Test F1 calibrado  | 0.9087 |
 | Test Acc calibrado | 0.8985 |
-| FPR de atenção | 0.0722 |
+| FPR de atenção   | 0.0722 |
 
 Ponto crítico:
 
-| Fonte | FPR | FNR |
-|---|---:|---:|
-| `coleta_real` | 0.8182 | 0.0000 |
-| `coleta_manipulated_strong` | 0.0000 | 0.0341 |
-| `coraa` | 0.1556 | 0.0000 |
+| Fonte                               |    FPR |    FNR |
+| ----------------------------------- | -----: | -----: |
+| `coleta_real`                     | 0.8182 | 0.0000 |
+| `coleta_manipulated_strong`       | 0.0000 | 0.0341 |
+| `coraa`                           | 0.1556 | 0.0000 |
 | `fake_braccent_d_codec_equalized` | 0.0800 | 0.0938 |
 
 Leitura: este é o melhor resultado geral até o momento. O treino adversarial melhorou a robustez agregada, mas ainda não resolveu o falso positivo em `coleta_real`.
@@ -222,20 +298,20 @@ audio_deepfake_v1_1_mixed_coraa_v2_coleta77_real_windows_domain_adv025_cnn
 
 Resultado agregado:
 
-| Métrica | Valor |
-|---|---:|
-| Test AUC | 0.9373 |
-| Test F1 | 0.8651 |
-| Test Acc | 0.8562 |
-| Test F1 calibrado | 0.8541 |
+| Métrica           |  Valor |
+| ------------------ | -----: |
+| Test AUC           | 0.9373 |
+| Test F1            | 0.8651 |
+| Test Acc           | 0.8562 |
+| Test F1 calibrado  | 0.8541 |
 | Test Acc calibrado | 0.8288 |
-| FPR de atenção | 0.1649 |
+| FPR de atenção   | 0.1649 |
 
 Ponto crítico:
 
-| Fonte | FPR | FNR |
-|---|---:|---:|
-| `coleta_real` | 0.7273 | 0.0000 |
+| Fonte                         |    FPR |    FNR |
+| ----------------------------- | -----: | -----: |
+| `coleta_real`               | 0.7273 | 0.0000 |
 | `coleta_manipulated_strong` | 0.0000 | 0.1591 |
 
 Leitura: fatiar a coleta real em janelas ajudou levemente a reduzir falso positivo em coleta real, mas piorou a detecção das versões manipuladas e aumentou a taxa geral de falso positivo. Isso indica que a duração era parte do problema, mas não a solução completa.
