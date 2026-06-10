@@ -83,3 +83,5 @@ audio/data/
 audio/models/
 *.flac
 *.ogg
+.codex
+.codex/
