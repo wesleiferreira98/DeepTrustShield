@@ -52,6 +52,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-split", default="val")
     parser.add_argument("--test-split", default="test")
     parser.add_argument("--attention-min-recall", type=float, default=0.90)
+    parser.add_argument(
+        "--source-weights",
+        default="",
+        help=(
+            "Pesos de loss por source no treino, no formato source=peso,source2=peso2. "
+            "Ex.: coleta_real=3,coraa=1.2"
+        ),
+    )
+    parser.add_argument(
+        "--domain-loss-weight",
+        type=float,
+        default=0.0,
+        help="Peso da perda auxiliar de dominio/source. Use 0 para desativar treino multitarefa.",
+    )
+    parser.add_argument(
+        "--domain-label-mode",
+        choices=("source", "acoustic"),
+        default="source",
+        help=(
+            "Como montar os rotulos da cabeca auxiliar. "
+            "'source' usa a coluna source; 'acoustic' agrupa real/fake do mesmo dominio acustico."
+        ),
+    )
+    parser.add_argument(
+        "--domain-adversarial",
+        action="store_true",
+        help="Usa reversao de gradiente na cabeca de dominio para reduzir atalhos de dominio no backbone.",
+    )
     return parser.parse_args()
 
 
@@ -106,9 +134,78 @@ def load_manifest(path: Path) -> list[dict]:
                     "manipulation_type": row.get("manipulation_type", "none") or "none",
                     "overlap_ratio": row.get("overlap_ratio", ""),
                     "ground_truth_path": row.get("ground_truth_path", ""),
+                    "sample_weight": float(row.get("sample_weight") or 1.0),
+                    "domain_label": 0,
                 }
             )
     return rows
+
+
+def parse_source_weights(value: str) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    for item in (value or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"Peso de source invalido: {item}. Use source=peso.")
+        source, weight_text = item.split("=", 1)
+        source = source.strip()
+        weight = float(weight_text.strip())
+        if not source or weight <= 0:
+            raise ValueError(f"Peso de source invalido: {item}.")
+        weights[source] = weight
+    return weights
+
+
+def apply_source_weights(rows: list[dict], source_weights: dict[str, float]) -> None:
+    for row in rows:
+        row["sample_weight"] = float(source_weights.get(row.get("source") or "", row.get("sample_weight", 1.0)))
+
+
+def summarize_sample_weights(rows: list[dict]) -> dict[str, dict[str, float]]:
+    grouped: dict[str, list[float]] = {}
+    for row in rows:
+        grouped.setdefault(row.get("source") or "unknown", []).append(float(row.get("sample_weight", 1.0)))
+    return {
+        source: {
+            "count": len(values),
+            "min": min(values),
+            "max": max(values),
+            "mean": sum(values) / len(values),
+        }
+        for source, values in sorted(grouped.items())
+    }
+
+
+def acoustic_domain(row: dict) -> str:
+    source = row.get("source") or "unknown"
+    if source in {"coleta_real", "coleta_manipulated_strong"}:
+        return "coleta_celular"
+    if source == "fake_braccent_d_codec_equalized":
+        return "fake_braccent"
+    if source == "brspeech_df":
+        return "brspeech_df"
+    if source == "coraa":
+        return "coraa"
+    return source or "unknown"
+
+
+def domain_key(row: dict, mode: str) -> str:
+    if mode == "acoustic":
+        return acoustic_domain(row)
+    return row.get("source") or "unknown"
+
+
+def build_domain_mapping(rows: list[dict], mode: str) -> dict[str, int]:
+    sources = sorted({domain_key(row, mode) for row in rows})
+    return {source: index for index, source in enumerate(sources)}
+
+
+def apply_domain_labels(rows: list[dict], domain_mapping: dict[str, int], mode: str) -> None:
+    unknown_id = domain_mapping.setdefault("unknown", len(domain_mapping))
+    for row in rows:
+        row["domain_label"] = int(domain_mapping.get(domain_key(row, mode), unknown_id))
 
 
 class AudioDeepfakeDataset(Dataset):
@@ -172,13 +269,18 @@ class AudioDeepfakeDataset(Dataset):
             waveform = torch.nn.functional.pad(waveform, (0, pad_amount))
         return waveform
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         row = self.rows[index]
         waveform = self._load_waveform(row["audio_path"])
         waveform = self._window_from_row(waveform, row)
         features = self.amplitude_to_db(self.mel_transform(waveform)).clamp(min=-80.0, max=0.0)
         features = (features + 80.0) / 80.0
-        return features, torch.tensor(float(row["label"]), dtype=torch.float32)
+        return (
+            features,
+            torch.tensor(float(row["label"]), dtype=torch.float32),
+            torch.tensor(float(row.get("sample_weight", 1.0)), dtype=torch.float32),
+            torch.tensor(int(row.get("domain_label", 0)), dtype=torch.long),
+        )
 
 
 class AudioCNN(nn.Module):
@@ -205,6 +307,49 @@ class AudioCNN(nn.Module):
         x = self.features(x)
         x = torch.flatten(x, 1)
         return self.classifier(x).squeeze(-1)
+
+
+class GradientReversal(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input_tensor: torch.Tensor, lambda_value: float) -> torch.Tensor:
+        ctx.lambda_value = float(lambda_value)
+        return input_tensor.view_as(input_tensor)
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor) -> tuple[torch.Tensor, None]:
+        return -ctx.lambda_value * grad_output, None
+
+
+def gradient_reverse(input_tensor: torch.Tensor, lambda_value: float) -> torch.Tensor:
+    return GradientReversal.apply(input_tensor, lambda_value)
+
+
+class AudioCNNMultiTask(nn.Module):
+    def __init__(
+        self,
+        n_mels: int,
+        num_domains: int,
+        *,
+        dropout: float = 0.20,
+        adversarial: bool = False,
+        adversarial_lambda: float = 1.0,
+    ) -> None:
+        super().__init__()
+        self.backbone = AudioCNN(n_mels=n_mels)
+        self.adversarial = adversarial
+        self.adversarial_lambda = adversarial_lambda
+        self.domain_classifier = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(64, num_domains),
+        )
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x = self.backbone.features(x)
+        x = torch.flatten(x, 1)
+        fake_logits = self.backbone.classifier(x).squeeze(-1)
+        domain_features = gradient_reverse(x, self.adversarial_lambda) if self.adversarial else x
+        domain_logits = self.domain_classifier(domain_features)
+        return fake_logits, domain_logits
 
 
 class ResidualBlock(nn.Module):
@@ -261,7 +406,60 @@ class AudioResNetSmall(nn.Module):
         return self.classifier(x).squeeze(-1)
 
 
-def build_model(architecture: str, n_mels: int, *, dropout: float) -> nn.Module:
+class AudioResNetSmallMultiTask(nn.Module):
+    def __init__(
+        self,
+        n_mels: int,
+        num_domains: int,
+        *,
+        dropout: float = 0.20,
+        adversarial: bool = False,
+        adversarial_lambda: float = 1.0,
+    ) -> None:
+        super().__init__()
+        self.backbone = AudioResNetSmall(n_mels=n_mels, dropout=dropout)
+        self.adversarial = adversarial
+        self.adversarial_lambda = adversarial_lambda
+        self.domain_classifier = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(128, num_domains),
+        )
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x = self.backbone.stem(x)
+        x = self.backbone.features(x)
+        x = torch.flatten(x, 1)
+        fake_logits = self.backbone.classifier(x).squeeze(-1)
+        domain_features = gradient_reverse(x, self.adversarial_lambda) if self.adversarial else x
+        domain_logits = self.domain_classifier(domain_features)
+        return fake_logits, domain_logits
+
+
+def build_model(
+    architecture: str,
+    n_mels: int,
+    *,
+    dropout: float,
+    num_domains: int = 0,
+    domain_adversarial: bool = False,
+    domain_adversarial_lambda: float = 1.0,
+) -> nn.Module:
+    if num_domains > 0:
+        if architecture == "resnet_small":
+            return AudioResNetSmallMultiTask(
+                n_mels=n_mels,
+                num_domains=num_domains,
+                dropout=dropout,
+                adversarial=domain_adversarial,
+                adversarial_lambda=domain_adversarial_lambda,
+            )
+        return AudioCNNMultiTask(
+            n_mels=n_mels,
+            num_domains=num_domains,
+            dropout=dropout,
+            adversarial=domain_adversarial,
+            adversarial_lambda=domain_adversarial_lambda,
+        )
     if architecture == "resnet_small":
         return AudioResNetSmall(n_mels=n_mels, dropout=dropout)
     return AudioCNN(n_mels=n_mels)
@@ -286,6 +484,37 @@ def resolve_pos_weight(value: str, train_rows: list[dict]) -> float:
     if fake_count == 0:
         return 1.0
     return real_count / fake_count
+
+
+def weighted_loss(
+    criterion: nn.Module,
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    sample_weights: torch.Tensor,
+) -> torch.Tensor:
+    losses = criterion(logits, labels)
+    if losses.ndim == 0:
+        return losses
+    weighted = losses * sample_weights
+    return weighted.sum() / sample_weights.sum().clamp_min(1e-6)
+
+
+def forward_logits(model: nn.Module, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+    output = model(features)
+    if isinstance(output, tuple):
+        return output[0], output[1]
+    return output, None
+
+
+def weighted_domain_loss(
+    criterion: nn.Module,
+    domain_logits: torch.Tensor,
+    domain_labels: torch.Tensor,
+    sample_weights: torch.Tensor,
+) -> torch.Tensor:
+    losses = criterion(domain_logits, domain_labels)
+    weighted = losses * sample_weights
+    return weighted.sum() / sample_weights.sum().clamp_min(1e-6)
 
 
 def metrics_from_probs(labels: list[int], probs: list[float], threshold: float = 0.5) -> dict[str, float]:
@@ -464,31 +693,52 @@ def collect_predictions(
     device: torch.device,
     *,
     use_amp: bool = False,
+    domain_criterion: nn.Module | None = None,
+    domain_loss_weight: float = 0.0,
 ) -> dict[str, float | list[float] | list[int]]:
     model.eval()
     total_loss = 0.0
     all_probs: list[float] = []
     all_labels: list[int] = []
+    domain_correct = 0
+    domain_total = 0
+    total_weight = 0.0
 
     with torch.no_grad():
-        for features, labels in loader:
+        for features, labels, sample_weights, domain_labels in loader:
             features = features.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
+            sample_weights = sample_weights.to(device, non_blocking=True)
+            domain_labels = domain_labels.to(device, non_blocking=True)
             with torch.amp.autocast("cuda", enabled=use_amp):
-                logits = model(features)
-                loss = criterion(logits, labels)
+                logits, domain_logits = forward_logits(model, features)
+                fake_loss = weighted_loss(criterion, logits, labels, sample_weights)
+                loss = fake_loss
+                if domain_logits is not None and domain_criterion is not None and domain_loss_weight > 0:
+                    loss = loss + domain_loss_weight * weighted_domain_loss(
+                        domain_criterion,
+                        domain_logits,
+                        domain_labels,
+                        sample_weights,
+                    )
                 probs = torch.sigmoid(logits)
+                if domain_logits is not None:
+                    domain_correct += (domain_logits.argmax(dim=1) == domain_labels).sum().item()
+                    domain_total += domain_labels.size(0)
 
-            total_loss += loss.item() * labels.size(0)
+            weight_sum = sample_weights.sum().item()
+            total_loss += loss.item() * weight_sum
+            total_weight += weight_sum
             all_probs.extend(probs.detach().cpu().numpy().tolist())
             all_labels.extend(labels.detach().cpu().numpy().astype(int).tolist())
 
     base_metrics = metrics_from_probs(all_labels, all_probs, threshold=0.5)
     return {
-        "loss": total_loss / max(len(all_labels), 1),
+        "loss": total_loss / max(total_weight, 1.0),
         **base_metrics,
         "probs": all_probs,
         "labels": all_labels,
+        "domain_acc": domain_correct / max(domain_total, 1),
     }
 
 
@@ -499,13 +749,24 @@ def evaluate(
     device: torch.device,
     *,
     use_amp: bool = False,
+    domain_criterion: nn.Module | None = None,
+    domain_loss_weight: float = 0.0,
 ) -> dict[str, float]:
-    predictions = collect_predictions(model, loader, criterion, device, use_amp=use_amp)
+    predictions = collect_predictions(
+        model,
+        loader,
+        criterion,
+        device,
+        use_amp=use_amp,
+        domain_criterion=domain_criterion,
+        domain_loss_weight=domain_loss_weight,
+    )
     return {
         "loss": float(predictions["loss"]),
         "auc": float(predictions["auc"]),
         "f1": float(predictions["f1"]),
         "acc": float(predictions["acc"]),
+        "domain_acc": float(predictions["domain_acc"]),
     }
 
 
@@ -518,20 +779,35 @@ def train_one_epoch(
     *,
     use_amp: bool = False,
     scaler: torch.amp.GradScaler | None = None,
+    domain_criterion: nn.Module | None = None,
+    domain_loss_weight: float = 0.0,
 ) -> dict[str, float]:
     model.train()
     total_loss = 0.0
     all_probs: list[float] = []
     all_labels: list[int] = []
+    domain_correct = 0
+    domain_total = 0
 
-    for features, labels in loader:
+    total_weight = 0.0
+    for features, labels, sample_weights, domain_labels in loader:
         features = features.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
+        sample_weights = sample_weights.to(device, non_blocking=True)
+        domain_labels = domain_labels.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
         with torch.amp.autocast("cuda", enabled=use_amp):
-            logits = model(features)
-            loss = criterion(logits, labels)
+            logits, domain_logits = forward_logits(model, features)
+            fake_loss = weighted_loss(criterion, logits, labels, sample_weights)
+            loss = fake_loss
+            if domain_logits is not None and domain_criterion is not None and domain_loss_weight > 0:
+                loss = loss + domain_loss_weight * weighted_domain_loss(
+                    domain_criterion,
+                    domain_logits,
+                    domain_labels,
+                    sample_weights,
+                )
 
         if scaler is not None and use_amp:
             scaler.scale(loss).backward()
@@ -542,7 +818,11 @@ def train_one_epoch(
             optimizer.step()
 
         probs = torch.sigmoid(logits)
-        total_loss += loss.item() * labels.size(0)
+        if domain_logits is not None:
+            domain_correct += (domain_logits.argmax(dim=1) == domain_labels).sum().item()
+            domain_total += domain_labels.size(0)
+        total_loss += loss.item() * sample_weights.sum().item()
+        total_weight += sample_weights.sum().item()
         all_probs.extend(probs.detach().cpu().numpy().tolist())
         all_labels.extend(labels.detach().cpu().numpy().astype(int).tolist())
 
@@ -553,10 +833,11 @@ def train_one_epoch(
         auc = 0.0
 
     return {
-        "loss": total_loss / max(len(all_labels), 1),
+        "loss": total_loss / max(total_weight, 1.0),
         "auc": auc,
         "f1": float(f1_score(all_labels, binary_preds, zero_division=0)),
         "acc": float(accuracy_score(all_labels, binary_preds)) if all_labels else 0.0,
+        "domain_acc": domain_correct / max(domain_total, 1),
     }
 
 
@@ -567,10 +848,12 @@ def write_history_csv(path: Path, rows: list[dict]) -> None:
         "train_auc",
         "train_f1",
         "train_acc",
+        "train_domain_acc",
         "val_loss",
         "val_auc",
         "val_f1",
         "val_acc",
+        "val_domain_acc",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -605,6 +888,14 @@ def main() -> None:
     train_rows = [row for row in rows if row["split"] == args.train_split]
     val_rows = [row for row in rows if row["split"] == args.val_split]
     test_rows = [row for row in rows if row["split"] == args.test_split]
+    source_weights = parse_source_weights(args.source_weights)
+    apply_source_weights(train_rows, source_weights)
+    use_domain_head = args.domain_loss_weight > 0
+    domain_mapping = build_domain_mapping(rows, args.domain_label_mode) if use_domain_head else {}
+    if use_domain_head:
+        apply_domain_labels(train_rows, domain_mapping, args.domain_label_mode)
+        apply_domain_labels(val_rows, domain_mapping, args.domain_label_mode)
+        apply_domain_labels(test_rows, domain_mapping, args.domain_label_mode)
 
     if not train_rows or not val_rows:
         raise RuntimeError("Manifesto precisa ter pelo menos train e val com amostras real/fake.")
@@ -673,10 +964,18 @@ def main() -> None:
         pin_memory=pin_memory,
     )
 
-    model = build_model(args.architecture, args.n_mels, dropout=args.dropout).to(device)
+    model = build_model(
+        args.architecture,
+        args.n_mels,
+        dropout=args.dropout,
+        num_domains=len(domain_mapping) if use_domain_head else 0,
+        domain_adversarial=bool(args.domain_adversarial),
+        domain_adversarial_lambda=args.domain_loss_weight,
+    ).to(device)
     pos_weight_value = resolve_pos_weight(str(args.pos_weight), train_rows)
     pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32, device=device)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction="none")
+    domain_criterion = nn.CrossEntropyLoss(reduction="none") if use_domain_head else None
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
@@ -695,6 +994,12 @@ def main() -> None:
     print(f"val = {len(val_rows)} {count_labels(val_rows)}")
     print(f"test = {len(test_rows)} {count_labels(test_rows)}")
     print(f"pos_weight = {pos_weight_value:.4f}")
+    print(f"source_weights = {source_weights or {}}")
+    print(f"domain_loss_weight = {args.domain_loss_weight:.4f}")
+    print(f"domain_label_mode = {args.domain_label_mode}")
+    print(f"domain_adversarial = {args.domain_adversarial}")
+    if use_domain_head:
+        print(f"domains = {domain_mapping}")
     print(f"architecture = {args.architecture}")
 
     for epoch in range(1, args.epochs + 1):
@@ -706,8 +1011,18 @@ def main() -> None:
             device,
             use_amp=use_amp,
             scaler=scaler,
+            domain_criterion=domain_criterion,
+            domain_loss_weight=args.domain_loss_weight,
         )
-        val_metrics = evaluate(model, val_loader, criterion, device, use_amp=use_amp)
+        val_metrics = evaluate(
+            model,
+            val_loader,
+            criterion,
+            device,
+            use_amp=use_amp,
+            domain_criterion=domain_criterion,
+            domain_loss_weight=args.domain_loss_weight,
+        )
 
         row = {
             "epoch": epoch,
@@ -715,10 +1030,12 @@ def main() -> None:
             "train_auc": round(train_metrics["auc"], 6),
             "train_f1": round(train_metrics["f1"], 6),
             "train_acc": round(train_metrics["acc"], 6),
+            "train_domain_acc": round(train_metrics["domain_acc"], 6),
             "val_loss": round(val_metrics["loss"], 6),
             "val_auc": round(val_metrics["auc"], 6),
             "val_f1": round(val_metrics["f1"], 6),
             "val_acc": round(val_metrics["acc"], 6),
+            "val_domain_acc": round(val_metrics["domain_acc"], 6),
         }
         history_rows.append(row)
 
@@ -732,6 +1049,7 @@ def main() -> None:
                     "args": vars(args),
                     "best_val_auc": best_val_auc,
                     "best_epoch": best_epoch,
+                    "domain_mapping": domain_mapping,
                 },
                 checkpoint_path,
             )
@@ -741,7 +1059,8 @@ def main() -> None:
             f"epoch={epoch:02d}/{args.epochs} "
             f"train_loss={train_metrics['loss']:.4f} train_auc={train_metrics['auc']:.4f} "
             f"val_loss={val_metrics['loss']:.4f} val_auc={val_metrics['auc']:.4f} "
-            f"val_f1={val_metrics['f1']:.4f} val_acc={val_metrics['acc']:.4f} {marker}"
+            f"val_f1={val_metrics['f1']:.4f} val_acc={val_metrics['acc']:.4f} "
+            f"val_domain_acc={val_metrics['domain_acc']:.4f} {marker}"
         )
 
     if checkpoint_path.exists():
@@ -750,7 +1069,15 @@ def main() -> None:
         best_epoch = int(state.get("best_epoch", best_epoch))
         best_val_auc = float(state.get("best_val_auc", best_val_auc))
 
-    val_predictions = collect_predictions(model, val_loader, criterion, device, use_amp=use_amp)
+    val_predictions = collect_predictions(
+        model,
+        val_loader,
+        criterion,
+        device,
+        use_amp=use_amp,
+        domain_criterion=domain_criterion,
+        domain_loss_weight=args.domain_loss_weight,
+    )
     threshold_calibration = find_best_threshold(
         val_predictions["labels"],
         val_predictions["probs"],
@@ -782,13 +1109,33 @@ def main() -> None:
         group_field="source",
         threshold=calibrated_threshold,
     )
-    test_metrics = evaluate(model, test_loader, criterion, device, use_amp=use_amp) if test_rows else None
+    test_metrics = (
+        evaluate(
+            model,
+            test_loader,
+            criterion,
+            device,
+            use_amp=use_amp,
+            domain_criterion=domain_criterion,
+            domain_loss_weight=args.domain_loss_weight,
+        )
+        if test_rows
+        else None
+    )
     test_metrics_calibrated = None
     test_metrics_by_accent = None
     test_metrics_by_source = None
     test_file_aggregation_metrics = None
     if test_rows:
-        test_predictions = collect_predictions(model, test_loader, criterion, device, use_amp=use_amp)
+        test_predictions = collect_predictions(
+            model,
+            test_loader,
+            criterion,
+            device,
+            use_amp=use_amp,
+            domain_criterion=domain_criterion,
+            domain_loss_weight=args.domain_loss_weight,
+        )
         calibrated_metrics = metrics_from_probs(
             test_predictions["labels"],
             test_predictions["probs"],
@@ -843,6 +1190,12 @@ def main() -> None:
         "weight_decay": args.weight_decay,
         "dropout": args.dropout,
         "pos_weight": pos_weight_value,
+        "source_weights": source_weights,
+        "domain_loss_weight": args.domain_loss_weight,
+        "domain_label_mode": args.domain_label_mode,
+        "domain_adversarial": args.domain_adversarial,
+        "domain_mapping": domain_mapping,
+        "train_sample_weights_by_source": summarize_sample_weights(train_rows),
         "seed": args.seed,
         "device": str(device),
         "amp": use_amp,

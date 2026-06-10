@@ -34,6 +34,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--download-shards",
+        action="store_true",
+        help="Baixa shards parquet completos do Hugging Face antes de amostrar, evitando streaming remoto instavel.",
+    )
+    parser.add_argument(
+        "--parquet-dir",
+        default="",
+        help="Pasta para salvar/ler shards parquet locais. Padrao: <output-dir>/parquet.",
+    )
+    parser.add_argument("--num-shards", type=int, default=1, help="Quantidade de shards parquet a baixar/ler.")
+    parser.add_argument("--total-shards", type=int, default=74, help="Total de shards do split no Hugging Face.")
+    parser.add_argument(
+        "--shard-start",
+        type=int,
+        default=0,
+        help="Indice inicial dos shards. Ex.: 0 baixa train-00000-of-00074.parquet.",
+    )
+    parser.add_argument(
+        "--flush-every",
+        type=int,
+        default=1,
+        help="Atualiza o manifesto a cada N amostras salvas para preservar progresso em quedas de rede.",
+    )
     return parser.parse_args()
 
 
@@ -127,6 +151,56 @@ def iter_stream(dataset_name: str, config: str, split: str) -> Iterable[dict]:
     return dataset
 
 
+def shard_filename(split: str, index: int, total: int) -> str:
+    return f"data/{split}-{index:05d}-of-{total:05d}.parquet"
+
+
+def download_parquet_shards(
+    dataset_name: str,
+    *,
+    split: str,
+    shard_start: int,
+    num_shards: int,
+    total_shards: int,
+    parquet_dir: Path,
+) -> list[Path]:
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:
+        raise RuntimeError("Dependencia ausente: instale huggingface_hub no ambiente.") from exc
+
+    parquet_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    for offset in range(num_shards):
+        shard_index = shard_start + offset
+        filename = shard_filename(split, shard_index, total_shards)
+        local_path = hf_hub_download(
+            repo_id=dataset_name,
+            repo_type="dataset",
+            filename=filename,
+            local_dir=str(parquet_dir),
+        )
+        paths.append(Path(local_path).resolve())
+    return paths
+
+
+def iter_local_parquet(paths: list[Path]) -> Iterable[dict]:
+    try:
+        from datasets import Audio, load_dataset
+    except ImportError as exc:
+        raise RuntimeError(
+            "Dependencia ausente: instale com `.venv/bin/pip install datasets` "
+            "ou atualize o ambiente com requirements-training.txt."
+        ) from exc
+
+    dataset = load_dataset("parquet", data_files=[str(path) for path in paths], split="train")
+    try:
+        dataset = dataset.cast_column("audio", Audio())
+    except Exception:
+        pass
+    return dataset
+
+
 def first_text(example: dict) -> str:
     for key in ("text", "sentence", "transcription", "transcript", "normalized_text"):
         value = example.get(key)
@@ -171,11 +245,23 @@ def main() -> None:
     rng = random.Random(args.seed)
     output_dir = resolve_repo_path(args.output_dir)
     manifest_path = resolve_repo_path(args.manifest)
+    parquet_dir = resolve_repo_path(args.parquet_dir) if args.parquet_dir else output_dir / "parquet"
     audio_dir = output_dir / "real"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
-    stream = iter_stream(args.dataset, args.config, args.split)
+    if args.download_shards:
+        parquet_paths = download_parquet_shards(
+            args.dataset,
+            split=args.split,
+            shard_start=args.shard_start,
+            num_shards=args.num_shards,
+            total_shards=args.total_shards,
+            parquet_dir=parquet_dir,
+        )
+        stream = iter_local_parquet(parquet_paths)
+    else:
+        stream = iter_stream(args.dataset, args.config, args.split)
     selected_indices = set(rng.sample(range(args.max_scan), min(args.max_scan, max(args.count * 20, args.count))))
 
     scanned = 0
@@ -226,6 +312,8 @@ def main() -> None:
                 "text": text,
             }
         )
+        if args.flush_every > 0 and len(rows) % args.flush_every == 0:
+            write_manifest(manifest_path, rows)
 
     write_manifest(manifest_path, rows)
     print(f"rows = {len(rows)} real")
