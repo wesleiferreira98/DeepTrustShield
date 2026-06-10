@@ -39,6 +39,11 @@ class Config:
             "path": f"{BASE_DIR}/audio/models/audio_deepfake_v1_brspeech_sample/audio_deepfake_v1_best.pth",
             "summary_path": f"{BASE_DIR}/audio/models/audio_deepfake_v1_brspeech_sample/summary.json",
         },
+        "audio_v1_1_domain_adv": {
+            "label": "Áudio V1.1 domínio adversarial",
+            "path": f"{BASE_DIR}/audio/models/audio_deepfake_v1_1_mixed_coraa_v2_coleta77_domain_adv025_acoustic_cnn/audio_deepfake_v1_best.pth",
+            "summary_path": f"{BASE_DIR}/audio/models/audio_deepfake_v1_1_mixed_coraa_v2_coleta77_domain_adv025_acoustic_cnn/summary.json",
+        },
     }
     if AUDIO_MODEL_REGISTRY_JSON:
         try:

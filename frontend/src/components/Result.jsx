@@ -23,6 +23,7 @@ const MODEL_OPTIONS = [
 const AUDIO_MODEL_OPTIONS = [
   { value: 'auto', label: 'Automatico (padrao atual)' },
   { value: 'default', label: 'FakeBrAccent codec equalizado' },
+  { value: 'audio_v1_1_domain_adv', label: 'Áudio V1.1 domínio adversarial' },
   { value: 'brspeech_sample', label: 'BRSpeech-DF amostra (experimental)' },
 ];
 

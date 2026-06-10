@@ -67,6 +67,7 @@ const CAMERA_CONSTRAINTS = [
 
 const AUDIO_MODEL_OPTIONS = [
   { value: 'default', label: 'FakeBrAccent codec equalizado' },
+  { value: 'audio_v1_1_domain_adv', label: 'Áudio V1.1 domínio adversarial' },
   { value: 'brspeech_sample', label: 'BRSpeech-DF amostra (experimental)' },
 ];
 

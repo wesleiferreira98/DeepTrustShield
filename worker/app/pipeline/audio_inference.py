@@ -105,6 +105,17 @@ def build_audio_model(architecture: str, n_mels: int, *, dropout: float) -> nn.M
     return AudioCNN(n_mels=n_mels)
 
 
+def _state_dict_for_inference(state_dict: dict) -> dict:
+    """Converte checkpoints multitarefa para o classificador binario de inferencia."""
+    if any(key.startswith("backbone.") for key in state_dict):
+        return {
+            key.removeprefix("backbone."): value
+            for key, value in state_dict.items()
+            if key.startswith("backbone.")
+        }
+    return state_dict
+
+
 def get_audio_device():
     global _audio_device
     if _audio_device is None:
@@ -166,9 +177,9 @@ def load_audio_model(model_path: str, summary_path: str | None = None):
     model = build_audio_model(str(architecture), n_mels=n_mels, dropout=dropout)
 
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-        model.load_state_dict(checkpoint["model_state_dict"])
+        model.load_state_dict(_state_dict_for_inference(checkpoint["model_state_dict"]))
     else:
-        model.load_state_dict(checkpoint)
+        model.load_state_dict(_state_dict_for_inference(checkpoint))
 
     threshold = _summary_threshold(summary)
     if threshold is not None:
