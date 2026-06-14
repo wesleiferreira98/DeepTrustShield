@@ -486,8 +486,8 @@
 
 .audio-metric-card {
   padding: 10px;
-  background: rgba(15, 23, 42, 0.22);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
 }
 
@@ -557,8 +557,8 @@
   justify-content: space-between;
   gap: 8px;
   padding: 7px 8px;
-  background: rgba(15, 23, 42, 0.18);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 12px;
 }
@@ -591,10 +591,10 @@
 }
 
 .audio-inline-toggle {
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 4px 8px;
-  background: rgba(15, 23, 42, 0.18);
+  background: var(--color-bg-secondary);
   color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 12px;
@@ -641,8 +641,8 @@
 
 .audio-validation-grid div {
   padding: 8px;
-  background: rgba(15, 23, 42, 0.18);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
 }
 
@@ -779,9 +779,9 @@
   gap: 10px;
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.18);
+  background: var(--color-bg-secondary);
 }
 
 .audio-rule-card div {
@@ -946,7 +946,7 @@
   overflow: auto;
   margin: 12px 0 0;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: 6px;
   color: var(--color-text-secondary);
