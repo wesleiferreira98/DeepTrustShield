@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     # Model
     model_version: str = "efficientnet-b0-v1"
 
+    # JWT Auth
+    jwt_secret_key: str = "dev-jwt-secret-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 30
+
+    # Default admin — created on first startup if no users exist
+    admin_email: str = "admin@deeptrust.com"
+    admin_password: str = "admin123"
+
     # Security
     artifacts_retention_hours: int = 24
     cleanup_interval_minutes: int = 60

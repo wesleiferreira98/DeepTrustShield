@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Upload from './components/Upload'
 import AnalysisPanel from './components/AnalysisPanel'
 import Result from './components/Result'
@@ -6,6 +6,10 @@ import LivenessFailureResult from './components/LivenessFailureResult'
 import Dashboard from './components/Dashboard'
 import History from './components/History'
 import Sidebar from './components/Sidebar'
+import Landing from './pages/Landing'
+import Login from './pages/Login'
+import SessionTimer from './components/SessionTimer'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { analyzeAudio, analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
 import './App.css'
 
@@ -13,7 +17,34 @@ const POLL_INTERVAL_MS = 700
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function App() {
+function AppShell() {
+  const { isAuthenticated, loading, sessionExpired } = useAuth()
+  const [view, setView] = useState('landing') // 'landing' | 'login'
+
+  // Quando a sessão expira, redireciona automaticamente para o login
+  useEffect(() => {
+    if (sessionExpired) setView('login')
+  }, [sessionExpired])
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)' }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    if (view === 'login') {
+      return <Login expired={sessionExpired} onBack={() => setView('landing')} />
+    }
+    return <Landing onLogin={() => setView('login')} />
+  }
+
+  return <MainApp />
+}
+
+function MainApp() {
   const [activeTab, setActiveTab] = useState('analysis') // analysis | dashboard | history
   const [state, setState] = useState('idle') // idle | uploading | analyzing | done | error
   const [jobId, setJobId] = useState(null)
@@ -233,6 +264,7 @@ function App() {
 
   return (
     <div className="app">
+      <SessionTimer mobile />
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="app-body">
@@ -301,6 +333,14 @@ function App() {
         )}
       </div>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   )
 }
 

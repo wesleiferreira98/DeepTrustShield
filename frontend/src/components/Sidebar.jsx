@@ -1,4 +1,6 @@
-import { LayoutDashboard, ClipboardList, ScanFace, Shield } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, LogOut, ScanFace, Shield } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import SessionTimer from './SessionTimer'
 import './Sidebar.css'
 
 const NAV = [
@@ -8,6 +10,7 @@ const NAV = [
 ]
 
 export default function Sidebar({ activeTab, onTabChange }) {
+  const { user, logout } = useAuth()
   return (
     <>
       {/* ── Desktop sidebar ── */}
@@ -39,11 +42,16 @@ export default function Sidebar({ activeTab, onTabChange }) {
         </nav>
 
         <div className="sb-footer">
-          <div className="sb-status">
-            <span className="sb-dot" />
-            <span>Sistema online</span>
+          <div className="sb-user">
+            <div className="sb-avatar">{user?.name?.[0]?.toUpperCase() ?? 'U'}</div>
+            <div className="sb-user-info">
+              <span className="sb-user-name">{user?.name ?? 'Usuário'}</span>
+              <SessionTimer />
+            </div>
           </div>
-          <span className="sb-version">v1.0</span>
+          <button className="sb-logout" onClick={logout} title="Sair" type="button">
+            <LogOut size={14} />
+          </button>
         </div>
       </aside>
 
@@ -60,6 +68,10 @@ export default function Sidebar({ activeTab, onTabChange }) {
             <span className="mob-nav-label">{label}</span>
           </button>
         ))}
+        <button className="mob-nav-item mob-nav-logout" onClick={logout} type="button">
+          <LogOut size={20} className="mob-nav-icon" />
+          <span className="mob-nav-label">Sair</span>
+        </button>
       </nav>
     </>
   )

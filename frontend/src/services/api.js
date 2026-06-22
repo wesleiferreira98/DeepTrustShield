@@ -3,12 +3,23 @@ const VIDEO_API_BASE    = '/v1/deepfake/video';
 const AUDIO_API_BASE    = '/v1/deepfake/audio';
 const LIVENESS_API_BASE = '/v1/liveness';
 
+function authHeader() {
+  const token = localStorage.getItem('dts-token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 /**
  * Safely extract an error message from any HTTP response.
  * Works even when the server returns an HTML page (nginx error pages, 502, 413, etc.)
  * instead of JSON — which would cause response.json() to throw.
  */
 async function parseErrorMessage(response) {
+  if (response.status === 401) {
+    localStorage.removeItem('dts-token')
+    localStorage.removeItem('dts-expires-at')
+    window.dispatchEvent(new CustomEvent('dts:logout', { detail: { expired: true } }))
+    return 'Sessão expirada. Faça login novamente.'
+  }
   const text = await response.text().catch(() => '')
   try {
     const json = JSON.parse(text)
@@ -33,6 +44,7 @@ export async function analyzeImage(file, targetModel = 'auto') {
 
   const response = await fetch(`${IMAGE_API_BASE}/analyze`, {
     method: 'POST',
+    headers: { ...authHeader() },
     body: formData,
   });
 
@@ -52,6 +64,7 @@ export async function analyzeVideo(frames, targetModel = 'auto') {
 
   const response = await fetch(`${VIDEO_API_BASE}/analyze`, {
     method: 'POST',
+    headers: { ...authHeader() },
     body: formData,
   });
 
@@ -70,6 +83,7 @@ export async function analyzeAudio(file, options = {}) {
 
   const response = await fetch(`${AUDIO_API_BASE}/analyze`, {
     method: 'POST',
+    headers: { ...authHeader() },
     body: formData,
   });
 
@@ -98,6 +112,7 @@ export async function analyzeLiveness(frames, sessionDefinition = null, required
 
   const response = await fetch(`${LIVENESS_API_BASE}/analyze`, {
     method: 'POST',
+    headers: { ...authHeader() },
     body: formData,
   });
 
@@ -114,6 +129,7 @@ export async function createLivenessSession(detectorMode = 'mediapipe') {
 
   const response = await fetch(`${LIVENESS_API_BASE}/session`, {
     method: 'POST',
+    headers: { ...authHeader() },
     body: formData,
   });
 
@@ -126,7 +142,7 @@ export async function createLivenessSession(detectorMode = 'mediapipe') {
 
 export async function pollStatus(jobId, mode = 'image') {
   const apiBase = mode === 'video' ? VIDEO_API_BASE : mode === 'audio' ? AUDIO_API_BASE : IMAGE_API_BASE;
-  const response = await fetch(`${apiBase}/status/${jobId}`);
+  const response = await fetch(`${apiBase}/status/${jobId}`, { headers: { ...authHeader() } });
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -137,7 +153,7 @@ export async function pollStatus(jobId, mode = 'image') {
 
 export async function getResult(jobId, mode = 'image') {
   const apiBase = mode === 'video' ? VIDEO_API_BASE : mode === 'audio' ? AUDIO_API_BASE : IMAGE_API_BASE;
-  const response = await fetch(`${apiBase}/result/${jobId}`);
+  const response = await fetch(`${apiBase}/result/${jobId}`, { headers: { ...authHeader() } });
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -155,7 +171,7 @@ export async function getHistory({ mode, days, limit = 20, offset = 0 } = {}) {
   if (mode)     params.set('mode', mode)
   if (days > 0) params.set('days', days)
 
-  const response = await fetch(`/v1/history?${params}`)
+  const response = await fetch(`/v1/history?${params}`, { headers: { ...authHeader() } })
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response))
   }
@@ -163,7 +179,7 @@ export async function getHistory({ mode, days, limit = 20, offset = 0 } = {}) {
 }
 
 export async function getStats() {
-  const response = await fetch('/v1/stats/summary');
+  const response = await fetch('/v1/stats/summary', { headers: { ...authHeader() } });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
@@ -171,7 +187,7 @@ export async function getStats() {
 }
 
 export async function getModelStats() {
-  const response = await fetch('/v1/stats/models');
+  const response = await fetch('/v1/stats/models', { headers: { ...authHeader() } });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }

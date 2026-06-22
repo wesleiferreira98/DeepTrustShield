@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,8 +10,9 @@ import time
 from redis import Redis
 
 from app.config import get_settings
-from app.api import deepfake, deepfake_audio, deepfake_video, liveness, stats, history
-from app.db.database import engine, Base, run_migrations
+from app.api import deepfake, deepfake_audio, deepfake_video, liveness, stats, history, auth
+from app.core.deps import get_current_user
+from app.db.database import engine, Base, run_migrations, SessionLocal
 from app.services.retention_service import cleanup_expired_data
 
 # Create tables then apply incremental migrations
@@ -108,19 +109,43 @@ app.add_middleware(
 os.makedirs(settings.artifacts_path, exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=settings.artifacts_path), name="artifacts")
 
-# Include routers
-app.include_router(deepfake.router, prefix="/v1/deepfake/image", tags=["deepfake"])
-app.include_router(deepfake_video.router, prefix="/v1/deepfake/video", tags=["deepfake-video"])
-app.include_router(deepfake_audio.router, prefix="/v1/deepfake/audio", tags=["deepfake-audio"])
-app.include_router(liveness.router, prefix="/v1/liveness", tags=["liveness"])
-app.include_router(stats.router,   prefix="/v1/stats",   tags=["stats"])
-app.include_router(history.router, prefix="/v1/history", tags=["history"])
+# Auth router — public (no token required)
+app.include_router(auth.router, prefix="/v1/auth", tags=["auth"])
+
+# All other routers require a valid JWT
+_auth = [Depends(get_current_user)]
+app.include_router(deepfake.router,       prefix="/v1/deepfake/image",  tags=["deepfake"],       dependencies=_auth)
+app.include_router(deepfake_video.router, prefix="/v1/deepfake/video",  tags=["deepfake-video"], dependencies=_auth)
+app.include_router(deepfake_audio.router, prefix="/v1/deepfake/audio",  tags=["deepfake-audio"], dependencies=_auth)
+app.include_router(liveness.router,       prefix="/v1/liveness",        tags=["liveness"],       dependencies=_auth)
+app.include_router(stats.router,          prefix="/v1/stats",           tags=["stats"],          dependencies=_auth)
+app.include_router(history.router,        prefix="/v1/history",         tags=["history"],        dependencies=_auth)
+
+
+def _seed_admin():
+    from app.core.security import hash_password
+    from app.db.models import User
+
+    db = SessionLocal()
+    try:
+        if not db.query(User).first():
+            db.add(User(
+                email=settings.admin_email.lower(),
+                name="Administrador",
+                hashed_password=hash_password(settings.admin_password),
+                is_admin=True,
+                is_active=True,
+            ))
+            db.commit()
+    finally:
+        db.close()
 
 
 @app.on_event("startup")
 async def startup_security_tasks():
     global _cleanup_task
 
+    await asyncio.to_thread(_seed_admin)
     await asyncio.to_thread(cleanup_expired_data)
 
     async def _periodic_cleanup():
