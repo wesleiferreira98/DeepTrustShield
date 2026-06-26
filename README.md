@@ -67,7 +67,8 @@ cd backend && pip install -r requirements.txt
 uvicorn app.main:app --reload
 
 # Worker apenas
-cd worker && pip install -r requirements.txt
+cd worker
+pip install -r requirements.txt
 rq worker --url redis://localhost:6379/0
 
 # Frontend apenas

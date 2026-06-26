@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Image, Upload as UploadIcon, Video } from 'lucide-react';
+import { Camera, FileAudio, Image, Upload as UploadIcon, Video } from 'lucide-react';
 import { analyzeLiveness, createLivenessSession } from '../services/api';
 import './Upload.css';
 
@@ -63,6 +63,12 @@ const CAMERA_CONSTRAINTS = [
     label: 'Padrao',
     video: { facingMode: 'user' },
   },
+];
+
+const AUDIO_MODEL_OPTIONS = [
+  { value: 'default', label: 'FakeBrAccent codec equalizado' },
+  { value: 'audio_v1_1_domain_adv', label: 'Áudio V1.1 domínio adversarial' },
+  { value: 'brspeech_sample', label: 'BRSpeech-DF amostra (experimental)' },
 ];
 
 const SPOOF_REASON_LABELS = {
@@ -259,10 +265,12 @@ function pickWeightedChallenges(pool, total) {
   return shuffle(selected);
 }
 
-function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
+function Upload({ onImageUpload, onAudioUpload, onVideoUpload, onLivenessRejected }) {
   const [mode, setMode] = useState('image');
   const [isDragging, setIsDragging] = useState(false);
   const [targetModel, setTargetModel] = useState('auto');
+  const [targetAudioModel, setTargetAudioModel] = useState('default');
+  const [useTemporalMemory, setUseTemporalMemory] = useState(true);
   const [autoStartTried, setAutoStartTried] = useState(false);
 
   const [cameraReady, setCameraReady] = useState(false);
@@ -1285,17 +1293,21 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
     setIsDragging(false);
 
     const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
+    if (file && mode === 'audio' && (file.type.startsWith('audio/') || /\.(flac|wav|mp3|m4a|ogg)$/i.test(file.name))) {
+      onAudioUpload(file, { useTemporalMemory, targetAudioModel });
+    } else if (file && file.type.startsWith('image/')) {
       onImageUpload(file, targetModel);
     }
-  }, [onImageUpload, targetModel]);
+  }, [mode, onAudioUpload, onImageUpload, targetAudioModel, targetModel, useTemporalMemory]);
 
   const handleFileSelect = useCallback((e) => {
     const file = e.target.files[0];
-    if (file) {
+    if (file && mode === 'audio') {
+      onAudioUpload(file, { useTemporalMemory, targetAudioModel });
+    } else if (file) {
       onImageUpload(file, targetModel);
     }
-  }, [onImageUpload, targetModel]);
+  }, [mode, onAudioUpload, onImageUpload, targetAudioModel, targetModel, useTemporalMemory]);
 
   return (
     <div className="upload-container">
@@ -1316,8 +1328,17 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
           <Video size={16} />
           Video curto (5s)
         </button>
+        <button
+          type="button"
+          className={`mode-btn ${mode === 'audio' ? 'active' : ''}`}
+          onClick={() => setMode('audio')}
+        >
+          <FileAudio size={16} />
+          Audio
+        </button>
       </div>
 
+      {mode !== 'audio' && (
       <div className="model-target-card">
         <label htmlFor="target-model">Modelo alvo</label>
         <select
@@ -1341,6 +1362,42 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
           <option value="alexnet">AlexNet (auto)</option>
         </select>
       </div>
+      )}
+
+      {mode === 'audio' && (
+        <div className="model-target-card">
+          <label htmlFor="target-audio-model">Modelo de audio</label>
+          <select
+            id="target-audio-model"
+            value={targetAudioModel}
+            onChange={(e) => setTargetAudioModel(e.target.value)}
+          >
+            {AUDIO_MODEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <p className="toggle-help">
+            Escolha qual detector neural sera usado antes da revisao simbolica.
+          </p>
+          <label htmlFor="temporal-memory-toggle">Memoria temporal simbolica</label>
+          <div className="inline-toggle-row">
+            <input
+              id="temporal-memory-toggle"
+              type="checkbox"
+              checked={useTemporalMemory}
+              onChange={(e) => setUseTemporalMemory(e.target.checked)}
+            />
+            <span title="Compara as janelas do proprio audio entre si para procurar quebras locais de comportamento neural, acustico e fonetico. Ajuda a destacar possiveis rupturas, mas nao e prova isolada de manipulacao.">
+              {useTemporalMemory
+                ? 'Ativada para procurar rupturas locais'
+                : 'Desativada nesta analise'}
+            </span>
+          </div>
+          <p className="toggle-help">
+            Ao ativar, o sistema compara trechos do proprio audio para buscar mudancas locais que destoam do restante.
+          </p>
+        </div>
+      )}
 
       {mode === 'video' && (
         <div className="model-target-card">
@@ -1392,7 +1449,32 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
         </div>
       )}
 
-      {mode === 'image' ? (
+      {mode === 'audio' ? (
+        <div
+          className={`upload-zone ${isDragging ? 'dragging' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className="upload-icon">
+            <FileAudio size={48} />
+          </div>
+          <h2>Arraste um audio aqui</h2>
+          <p>ou clique para selecionar</p>
+
+          <input
+            type="file"
+            accept="audio/flac,audio/x-flac,audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/mp4,audio/ogg,.flac,.wav,.mp3,.m4a,.ogg"
+            onChange={handleFileSelect}
+            className="upload-input"
+          />
+
+          <div className="upload-formats">
+            <FileAudio size={16} />
+            <span>FLAC, WAV, MP3, M4A ou OGG</span>
+          </div>
+        </div>
+      ) : mode === 'image' ? (
         <div
           className={`upload-zone ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}
@@ -1580,8 +1662,8 @@ function Upload({ onImageUpload, onVideoUpload, onLivenessRejected }) {
       <div className="upload-info">
         <h3>Como funciona?</h3>
         <ol>
-          <li>{mode === 'image' ? 'Envie uma selfie ou foto com rosto' : 'Grave ate 5s com o rosto centralizado'}</li>
-          <li>{mode === 'image' ? 'Nossa IA analisa a imagem em tempo real' : 'Extraimos frames do video em memoria'}</li>
+          <li>{mode === 'image' ? 'Envie uma selfie ou foto com rosto' : mode === 'audio' ? 'Envie uma amostra curta de voz' : 'Grave ate 5s com o rosto centralizado'}</li>
+          <li>{mode === 'image' ? 'Nossa IA analisa a imagem em tempo real' : mode === 'audio' ? 'O modelo de audio calcula a probabilidade de deepfake' : 'Extraimos frames do video em memoria'}</li>
           <li>Receba o resultado com nivel de risco</li>
         </ol>
       </div>

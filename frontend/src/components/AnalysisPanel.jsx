@@ -2,7 +2,17 @@ import { Loader2, Check, Circle, AlertCircle } from 'lucide-react';
 import './AnalysisPanel.css';
 
 function AnalysisPanel({ status, previewUrl, isUploading, analysisMode = 'image' }) {
-  const steps = status?.steps || [
+  const isAudio = analysisMode === 'audio';
+  const modeLabel = analysisMode === 'video' ? 'video curto' : isAudio ? 'audio' : 'imagem';
+  const defaultSteps = isAudio
+    ? [
+      { id: 'validating_image', label: 'Validando audio', state: 'pending' },
+      { id: 'preprocessing', label: 'Pre-processando audio', state: 'pending' },
+      { id: 'model_inference', label: 'Analisando voz com IA', state: 'pending' },
+      { id: 'calibrating_score', label: 'Aplicando limite calibrado', state: 'pending' },
+      { id: 'generating_evidence', label: 'Gerando diagnostico', state: 'pending' },
+    ]
+    : [
     { id: 'validating_image', label: 'Validando imagem', state: 'pending' },
     { id: 'detecting_face', label: 'Detectando face', state: 'pending' },
     { id: 'quality_checks', label: 'Verificando qualidade', state: 'pending' },
@@ -11,6 +21,7 @@ function AnalysisPanel({ status, previewUrl, isUploading, analysisMode = 'image'
     { id: 'calibrating_score', label: 'Calibrando resultado', state: 'pending' },
     { id: 'generating_evidence', label: 'Gerando evidências', state: 'pending' },
   ];
+  const steps = status?.steps || defaultSteps;
 
   const getStepIcon = (state) => {
     switch (state) {
@@ -28,7 +39,9 @@ function AnalysisPanel({ status, previewUrl, isUploading, analysisMode = 'image'
   return (
     <div className="analysis-container">
       <div className="analysis-preview">
-        {previewUrl && (
+        {isAudio && previewUrl ? (
+          <audio src={previewUrl} controls className="audio-preview" />
+        ) : previewUrl && (
           <div className="preview-wrapper">
             <img src={previewUrl} alt="Preview" className="preview-image" />
             {status?.preview?.bbox && (
@@ -48,11 +61,13 @@ function AnalysisPanel({ status, previewUrl, isUploading, analysisMode = 'image'
 
       <div className="analysis-panel">
         <div className="panel-header">
-          <h2>{analysisMode === 'video' ? 'Analisando video curto...' : 'Analisando imagem...'}</h2>
+          <h2>Analisando {modeLabel}...</h2>
           <p className="status-message">
             {isUploading
               ? analysisMode === 'video'
                 ? 'Enviando frames do video...'
+                : isAudio
+                  ? 'Enviando audio...'
                 : 'Enviando arquivo...'
               : status?.message || 'Processando...'}
           </p>

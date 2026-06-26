@@ -25,12 +25,28 @@ class Settings(BaseSettings):
     # Model
     model_version: str = "efficientnet-b0-v1"
 
+    # JWT Auth
+    jwt_secret_key: str = "dev-jwt-secret-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 30
+
+    # Default admin — created on first startup if no users exist
+    admin_email: str = "admin@deeptrust.com"
+    admin_password: str = "admin123"
+
     # Security
     artifacts_retention_hours: int = 24
     cleanup_interval_minutes: int = 60
     max_image_upload_mb: int = 8
     max_frame_upload_mb: int = 3
     max_total_frames_upload_mb: int = 24
+    max_audio_upload_mb: int = 32
+    audio_model_path: str = (
+        f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth"
+    )
+    audio_model_summary_path: str = (
+        f"{BASE_DIR}/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json"
+    )
 
     # Liveness challenge signing. Override in production with a long random value.
     liveness_session_secret: str = "dev-liveness-session-secret-change-me"

@@ -1,0 +1,58 @@
+{
+  "task": "audio_deepfake_detection",
+  "model_version": "audio_deepfake_v1",
+  "manifest_path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/data/manifests/asvspoof2019_la_sample_1000_manifest.csv",
+  "output_dir": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/models/audio_deepfake_v1_asvspoof2019_sample_1000",
+  "checkpoint": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/models/audio_deepfake_v1_asvspoof2019_sample_1000/audio_deepfake_v1_best.pth",
+  "history_csv": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/models/audio_deepfake_v1_asvspoof2019_sample_1000/history.csv",
+  "sample_rate": 16000,
+  "clip_seconds": 4.0,
+  "n_mels": 80,
+  "batch_size": 64,
+  "epochs": 10,
+  "learning_rate": 0.001,
+  "seed": 42,
+  "device": "cuda",
+  "train_count": 2000,
+  "val_count": 2000,
+  "test_count": 2000,
+  "train_labels": {
+    "real": 1000,
+    "fake": 1000
+  },
+  "val_labels": {
+    "real": 1000,
+    "fake": 1000
+  },
+  "test_labels": {
+    "real": 1000,
+    "fake": 1000
+  },
+  "sample_audio_info": {
+    "samplerate": 16000,
+    "channels": 1,
+    "duration_seconds": 6.013125
+  },
+  "best_epoch": 8,
+  "best_val_auc": 0.9875619999999999,
+  "threshold_calibration": {
+    "threshold": 0.2501738369464874,
+    "auc": 0.9875619999999999,
+    "f1": 0.9449131513647643,
+    "acc": 0.9445
+  },
+  "elapsed_minutes": 1.575,
+  "test_metrics": {
+    "loss": 0.4324037783145905,
+    "auc": 0.9484299999999999,
+    "f1": 0.758364312267658,
+    "acc": 0.805
+  },
+  "test_metrics_calibrated": {
+    "loss": 0.4324037783145905,
+    "auc": 0.9484299999999999,
+    "f1": 0.8978328173374613,
+    "acc": 0.901,
+    "threshold": 0.2501738369464874
+  }
+}

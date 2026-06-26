@@ -224,10 +224,11 @@ echo -e "${YELLOW}Iniciando Worker (RQ)...${NC}"
 if [ ! -d "worker/venv" ]; then
     echo -e "  Criando ambiente virtual do worker..."
     python3 -m venv worker/venv
-    source worker/venv/bin/activate
-    pip install -r worker/requirements.txt
-    deactivate
 fi
+
+source worker/venv/bin/activate
+pip install -r worker/requirements.txt
+deactivate
 
 cd worker
 source venv/bin/activate
@@ -235,6 +236,8 @@ export DATABASE_URL="sqlite:///../detectar.db"
 export REDIS_URL="redis://localhost:6379/0"
 export ARTIFACTS_PATH="../artifacts"
 export MODEL_PATH="../model/weights"
+export AUDIO_MODEL_PATH="../model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth"
+export AUDIO_MODEL_SUMMARY_PATH="../model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json"
 
 rq worker deepfake --url redis://localhost:6379/0 --with-scheduler &
 WORKER_PID=$!

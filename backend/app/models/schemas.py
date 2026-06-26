@@ -81,6 +81,7 @@ class ResultResponse(BaseModel):
     processing_time_ms: Optional[int] = None
     video_summary: Optional[Dict[str, Any]] = None
     frame_results: Optional[List[Dict[str, Any]]] = None
+    audio_summary: Optional[Dict[str, Any]] = None
 
 
 class ErrorResponse(BaseModel):

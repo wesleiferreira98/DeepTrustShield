@@ -1,5 +1,8 @@
 # 📚 Bases de Dados Públicas para Detecção de Deepfake
 
+Esta pasta documenta e abriga experimentos de imagem/face. Notebooks de audio
+devem ficar em `audio/notebooks/`.
+
 ## Recomendadas para Treinamento
 
 ### 1. 140k Real and Fake Faces (Kaggle) ⭐ Recomendado para MVP

@@ -23,6 +23,227 @@ audio/
   notebooks/
 ```
 
+Os notebooks de audio devem ficar sempre em `audio/notebooks/`. A pasta
+`notebooks/` na raiz fica reservada para experimentos de imagem/face.
+
+## FakeBrAccent-D
+
+Base Kaggle:
+
+```text
+https://www.kaggle.com/datasets/katarinaveljovic/fake-braccent-d
+```
+
+Esta e a base prioritaria para a frente regional em portugues brasileiro. Ela
+deve ser usada para treinar o baseline BR e medir vies por sotaque.
+
+### Download
+
+O download via Kaggle requer o `kaggle.json` da sua conta.
+
+```bash
+pip install kaggle
+mkdir -p ~/.kaggle
+cp /caminho/para/kaggle.json ~/.kaggle/kaggle.json
+chmod 600 ~/.kaggle/kaggle.json
+
+kaggle datasets download \
+  -d katarinaveljovic/fake-braccent-d \
+  -p audio/data/raw/fake_braccent_d_download
+
+unzip audio/data/raw/fake_braccent_d_download/fake-braccent-d.zip \
+  -d audio/data/raw/fake_braccent_d
+```
+
+Se o arquivo ZIP for baixado manualmente pelo navegador, coloque-o em:
+
+```text
+audio/data/raw/fake_braccent_d_download/fake-braccent-d.zip
+```
+
+e rode apenas o `unzip`.
+
+### Manifesto com sotaque
+
+```bash
+python scripts/build_fake_braccent_manifest.py \
+  --dataset-root audio/data/raw/fake_braccent_d \
+  --output audio/data/manifests/fake_braccent_d_manifest.csv
+```
+
+O manifesto inclui:
+
+- `audio_path`
+- `relative_path`
+- `filename`
+- `extension`
+- `split`
+- `label`
+- `source`
+- `accent`
+
+### Treino
+
+```bash
+python scripts/train_audio_deepfake.py \
+  --manifest audio/data/manifests/fake_braccent_d_manifest.csv \
+  --output-dir audio/models/audio_deepfake_v1_fake_braccent_d \
+  --epochs 20 \
+  --batch-size 32
+```
+
+O `summary.json` do treino inclui metricas por sotaque:
+
+- `val_metrics_by_accent`
+- `test_metrics_by_accent`
+- `false_positive_rate`
+- `false_negative_rate`
+
+## Sidecars de transcricao para a camada fonetico-fonologica
+
+A camada neuro-simbolica fonetico-fonologica le arquivos auxiliares ao lado do
+audio para extrair candidatos de eventos linguistico-foneticos. O caminho mais
+seguro para pesquisa e gerar esses arquivos offline com `faster-whisper`.
+
+Instale as dependencias de pesquisa:
+
+```bash
+.venv/bin/pip install -r requirements-training.txt
+```
+
+Para transcrever um unico audio:
+
+```bash
+.venv/bin/python scripts/build_audio_transcript_sidecars.py \
+  --input caminho/para/audio.ogg \
+  --model medium \
+  --device cuda \
+  --compute-type float16 \
+  --language pt
+```
+
+Para transcrever uma pasta:
+
+```bash
+.venv/bin/python scripts/build_audio_transcript_sidecars.py \
+  --input audio/data/eval_external \
+  --recursive \
+  --model medium \
+  --device cuda \
+  --compute-type float16 \
+  --language pt
+```
+
+Para transcrever os audios de um manifesto:
+
+```bash
+.venv/bin/python scripts/build_audio_transcript_sidecars.py \
+  --manifest audio/data/manifests/fake_braccent_d_codec_equalized_manifest.csv \
+  --model medium \
+  --device cuda \
+  --compute-type float16 \
+  --language pt
+```
+
+Por padrao, o script aplica um pre-tratamento leve somente para o ASR: mono,
+16 kHz, remocao de DC, filtro passa-altas suave, reducao conservadora de ruido
+estacionario, corte apenas de silencio nas bordas e normalizacao leve de volume.
+Quando esse modo esta ativo e `--output-suffix` nao e informado, o sidecar e
+salvo como `.preprocessed.transcript.json`. Para comparar com o audio bruto,
+use `--no-preprocess-asr-audio`; nesse caso o sidecar padrao continua sendo
+`.transcript.json`.
+
+Cada audio gera um sidecar:
+
+```text
+audio.transcript.json
+```
+
+Esse arquivo inclui texto, palavras com tempo aproximado, segmentos do ASR e
+metadados do modelo. O worker ja consegue ler esse sidecar e gerar candidatos
+para a camada simbolica. Sem sidecar, a analise segue normalmente, mas a parte
+fonetico-fonologica retorna cobertura insuficiente.
+
+### ASR automático no fluxo web
+
+O worker também pode gerar esse sidecar automaticamente durante a análise web
+quando nenhum sidecar for encontrado.
+
+Variáveis principais:
+
+```text
+AUDIO_ASR_ENABLED=true
+AUDIO_ASR_MODEL=medium
+AUDIO_ASR_LANGUAGE=pt
+AUDIO_ASR_DEVICE=auto
+AUDIO_ASR_COMPUTE_TYPE=default
+AUDIO_ASR_PREPROCESS_ENABLED=true
+```
+
+Quando ativado, o resultado de áudio inclui uma seção `transcript` e o front
+mostra a transcrição automática de forma formatada antes da revisão simbólica.
+O pré-tratamento de ASR é aplicado apenas à entrada temporária do Whisper; o
+detector neural e as heurísticas fonéticas continuam usando o áudio original.
+
+Se `faster-whisper` não estiver instalado ou o ASR falhar, a análise neural
+continua funcionando; apenas a camada fonético-fonológica fica sem cobertura.
+
+## Conjunto manipulado controlado
+
+Para validar se a V1 detecta manipulações, gere audios fake controlados com
+ground truth de intervalo manipulado:
+
+```bash
+.venv/bin/python scripts/build_audio_manipulation_set.py \
+  --source-audio "audio/data/eval_external/Salvador Real Audio.ogg" \
+  --output-root audio/data/eval_manipulated/salvador_real_audio \
+  --operations remove silence duplicate splice_same volume_down volume_up pitch_up pitch_down tempo_up tempo_down \
+  --start 20 \
+  --duration 4 \
+  --overwrite
+```
+
+O mesmo script também aceita uma pasta em `--source-audio`, gerando um grupo de
+controle manipulado para todos os áudios consentidos encontrados:
+
+```bash
+.venv/bin/python scripts/build_audio_manipulation_set.py \
+  --source-audio audio/data/eval_external \
+  --output-root audio/data/eval_manipulated/eval_external_batch \
+  --operations remove silence duplicate splice_same volume_down volume_up pitch_up pitch_down tempo_up tempo_down \
+  --start 20 \
+  --duration 4 \
+  --overwrite
+```
+
+Para testar colagem de outro falante ou outra origem consentida:
+
+```bash
+.venv/bin/python scripts/build_audio_manipulation_set.py \
+  --source-audio "audio/data/eval_external/Salvador Real Audio.ogg" \
+  --insert-audio "audio/data/eval_external/Bahia interior.ogg" \
+  --output-root audio/data/eval_manipulated/salvador_splice_other \
+  --operations splice_other \
+  --start 20 \
+  --duration 4 \
+  --overwrite
+```
+
+Saidas principais:
+
+- `audio/`: audios manipulados em WAV mono 16 kHz;
+- `ground_truth/`: JSON por arquivo com `manipulated_segments`;
+- `manifest.csv`: manifesto com `audio_path`, `label`, `manipulation_type` e caminho do ground truth;
+- `summary.json`: resumo da geracao.
+
+Ao analisar esses WAVs no ambiente web, o worker deve gerar automaticamente o
+`.transcript.json` se nao encontrar transcricao existente. A busca automatica de
+sidecars considera tanto `audio/data/eval_external` quanto
+`audio/data/eval_manipulated`, alem do arquivo ao lado do audio enviado.
+
+O objetivo da avaliacao nao e apenas acertar `real/fake`; tambem e verificar se
+os picos por janela caem dentro ou perto de `manipulated_segments`.
+
 ## Caminho recomendado para ASVspoof 2019 LA sem lotar a maquina
 
 Se voce tiver a base oficial ja extraida, monte primeiro uma amostra pequena:

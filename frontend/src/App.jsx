@@ -1,16 +1,51 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Upload from './components/Upload'
 import AnalysisPanel from './components/AnalysisPanel'
 import Result from './components/Result'
 import LivenessFailureResult from './components/LivenessFailureResult'
-import { analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
+import Dashboard from './components/Dashboard'
+import History from './components/History'
+import Sidebar from './components/Sidebar'
+import Landing from './pages/Landing'
+import Login from './pages/Login'
+import SessionTimer from './components/SessionTimer'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { analyzeAudio, analyzeImage, analyzeVideo, pollStatus, getResult } from './services/api'
 import './App.css'
 
 const POLL_INTERVAL_MS = 700
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function App() {
+function AppShell() {
+  const { isAuthenticated, loading, sessionExpired } = useAuth()
+  const [view, setView] = useState('landing') // 'landing' | 'login'
+
+  // Quando a sessão expira, redireciona automaticamente para o login
+  useEffect(() => {
+    if (sessionExpired) setView('login')
+  }, [sessionExpired])
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)' }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    if (view === 'login') {
+      return <Login expired={sessionExpired} onBack={() => setView('landing')} />
+    }
+    return <Landing onLogin={() => setView('login')} />
+  }
+
+  return <MainApp />
+}
+
+function MainApp() {
+  const [activeTab, setActiveTab] = useState('analysis') // analysis | dashboard | history
   const [state, setState] = useState('idle') // idle | uploading | analyzing | done | error
   const [jobId, setJobId] = useState(null)
   const [analysisMode, setAnalysisMode] = useState('image')
@@ -22,6 +57,8 @@ function App() {
   const [error, setError] = useState(null)
 
   const [sourceImageFile, setSourceImageFile] = useState(null)
+  const [sourceAudioFile, setSourceAudioFile] = useState(null)
+  const [sourceAudioOptions, setSourceAudioOptions] = useState({ useTemporalMemory: true, targetAudioModel: 'default' })
   const [sourceVideoFrames, setSourceVideoFrames] = useState([])
 
   const [comparisonResults, setComparisonResults] = useState([])
@@ -39,12 +76,14 @@ function App() {
     }
 
     setComparisonResults((prev) => {
-      const filtered = prev.filter((item) => item.model_version !== entry.model_version)
+      const filtered = prev.filter((item) => (
+        item.model_version !== entry.model_version || item.requested_model !== entry.requested_model
+      ))
       return [...filtered, entry]
     })
   }, [])
 
-  const runAnalysisJob = useCallback(async (mode, targetModel, payload, isReanalysis = false) => {
+  const runAnalysisJob = useCallback(async (mode, targetModel, payload, isReanalysis = false, options = {}) => {
     setError(null)
     setReanalysisError(null)
 
@@ -61,7 +100,9 @@ function App() {
     try {
       const response = mode === 'video'
         ? await analyzeVideo(payload, targetModel)
-        : await analyzeImage(payload, targetModel)
+        : mode === 'audio'
+          ? await analyzeAudio(payload, options)
+          : await analyzeImage(payload, targetModel)
 
       setJobId(response.job_id)
       if (!isReanalysis) {
@@ -105,6 +146,8 @@ function App() {
   const handleImageUpload = useCallback(async (file, targetModel = 'auto') => {
     setAnalysisMode('image')
     setSourceImageFile(file)
+    setSourceAudioFile(null)
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames([])
     setLivenessAnalysis(null)
     setLivenessFailureMessage(null)
@@ -118,6 +161,8 @@ function App() {
   const handleVideoUpload = useCallback(async (frames, targetModel = 'auto', preview = null, livenessResult = null) => {
     setAnalysisMode('video')
     setSourceImageFile(null)
+    setSourceAudioFile(null)
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames(frames)
     setLivenessAnalysis(livenessResult)
     setLivenessFailureMessage(null)
@@ -133,6 +178,23 @@ function App() {
     await runAnalysisJob('video', targetModel, frames, false)
   }, [runAnalysisJob])
 
+  const handleAudioUpload = useCallback(async (file, options = { useTemporalMemory: true, targetAudioModel: 'default' }) => {
+    const normalizedOptions = {
+      useTemporalMemory: options.useTemporalMemory ?? true,
+      targetAudioModel: options.targetAudioModel || 'default',
+    }
+    setAnalysisMode('audio')
+    setSourceImageFile(null)
+    setSourceAudioFile(file)
+    setSourceAudioOptions(normalizedOptions)
+    setSourceVideoFrames([])
+    setLivenessAnalysis(null)
+    setLivenessFailureMessage(null)
+    setPreviewUrl(URL.createObjectURL(file))
+
+    await runAnalysisJob('audio', normalizedOptions.targetAudioModel, file, false, normalizedOptions)
+  }, [runAnalysisJob])
+
   const handleLivenessRejected = useCallback((frames, preview = null, livenessResult = null, message = null) => {
     setState('liveness_failed')
     setAnalysisMode('video')
@@ -142,6 +204,8 @@ function App() {
     setError(null)
     setComparisonResults([])
     setSourceImageFile(null)
+    setSourceAudioFile(null)
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames(frames)
     setLivenessAnalysis(livenessResult)
     setLivenessFailureMessage(message)
@@ -166,8 +230,18 @@ function App() {
       return
     }
 
+    if (analysisMode === 'audio' && sourceAudioFile) {
+      const nextOptions = {
+        ...sourceAudioOptions,
+        targetAudioModel: targetModel || sourceAudioOptions.targetAudioModel || 'default',
+      }
+      setSourceAudioOptions(nextOptions)
+      await runAnalysisJob('audio', nextOptions.targetAudioModel, sourceAudioFile, true, nextOptions)
+      return
+    }
+
     setReanalysisError('Nao encontramos o arquivo original para reanalise. Faça uma nova análise.')
-  }, [analysisMode, runAnalysisJob, sourceImageFile, sourceVideoFrames])
+  }, [analysisMode, runAnalysisJob, sourceAudioFile, sourceAudioOptions, sourceImageFile, sourceVideoFrames])
 
   const handleReset = useCallback(() => {
     setState('idle')
@@ -180,6 +254,8 @@ function App() {
     setLivenessFailureMessage(null)
     setError(null)
     setSourceImageFile(null)
+    setSourceAudioFile(null)
+    setSourceAudioOptions({ useTemporalMemory: true, targetAudioModel: 'default' })
     setSourceVideoFrames([])
     setComparisonResults([])
     setReanalysisLoading(false)
@@ -188,71 +264,83 @@ function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="logo">
-          <span className="logo-icon">�️</span>
-          <span className="logo-text">DeepTrustShield</span>
-        </div>
-        <p className="tagline">Proteção contra Deepfakes com IA</p>
-      </header>
+      <SessionTimer mobile />
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <main className="main">
-        {state === 'idle' && (
-          <Upload
-            onImageUpload={handleImageUpload}
-            onVideoUpload={handleVideoUpload}
-            onLivenessRejected={handleLivenessRejected}
-          />
+      <div className="app-body">
+        {activeTab === 'dashboard' ? (
+          <main className="main main-page">
+            <Dashboard />
+          </main>
+        ) : activeTab === 'history' ? (
+          <main className="main main-page">
+            <History />
+          </main>
+        ) : (
+          <main className="main">
+            {state === 'idle' && (
+              <Upload
+                onImageUpload={handleImageUpload}
+                onAudioUpload={handleAudioUpload}
+                onVideoUpload={handleVideoUpload}
+                onLivenessRejected={handleLivenessRejected}
+              />
+            )}
+
+            {(state === 'uploading' || state === 'analyzing') && (
+              <AnalysisPanel
+                status={status}
+                previewUrl={previewUrl}
+                isUploading={state === 'uploading'}
+                analysisMode={analysisMode}
+              />
+            )}
+
+            {(state === 'done' || state === 'error') && result && (
+              <Result
+                result={result}
+                previewUrl={previewUrl}
+                livenessAnalysis={livenessAnalysis}
+                status={status}
+                analysisMode={analysisMode}
+                onReset={handleReset}
+                onReanalyze={handleReanalyze}
+                comparisonResults={comparisonResults}
+                reanalysisLoading={reanalysisLoading}
+                reanalysisError={reanalysisError}
+              />
+            )}
+
+            {state === 'liveness_failed' && (
+              <LivenessFailureResult
+                previewUrl={previewUrl}
+                livenessAnalysis={livenessAnalysis}
+                message={livenessFailureMessage}
+                onReset={handleReset}
+              />
+            )}
+
+            {state === 'error' && !result && (
+              <div className="error-card">
+                <h2>❌ Erro</h2>
+                <p>{error || 'Ocorreu um erro inesperado'}</p>
+                <button onClick={handleReset} className="btn-primary">
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+          </main>
         )}
-
-        {(state === 'uploading' || state === 'analyzing') && (
-          <AnalysisPanel
-            status={status}
-            previewUrl={previewUrl}
-            isUploading={state === 'uploading'}
-            analysisMode={analysisMode}
-          />
-        )}
-
-        {(state === 'done' || state === 'error') && result && (
-          <Result
-            result={result}
-            previewUrl={previewUrl}
-            livenessAnalysis={livenessAnalysis}
-            status={status}
-            analysisMode={analysisMode}
-            onReset={handleReset}
-            onReanalyze={handleReanalyze}
-            comparisonResults={comparisonResults}
-            reanalysisLoading={reanalysisLoading}
-            reanalysisError={reanalysisError}
-          />
-        )}
-
-        {state === 'liveness_failed' && (
-          <LivenessFailureResult
-            previewUrl={previewUrl}
-            livenessAnalysis={livenessAnalysis}
-            message={livenessFailureMessage}
-            onReset={handleReset}
-          />
-        )}
-
-        {state === 'error' && !result && (
-          <div className="error-card">
-            <h2>❌ Erro</h2>
-            <p>{error || 'Ocorreu um erro inesperado'}</p>
-            <button onClick={handleReset} className="btn-primary">
-              Tentar novamente
-            </button>
-          </div>
-        )}
-      </main>
-
-      <footer className="footer">
-        <p>MVP v1.0 • EfficientNet-B0</p>
-      </footer>
+      </div>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   )
 }
 

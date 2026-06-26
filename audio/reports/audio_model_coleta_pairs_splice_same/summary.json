@@ -1,0 +1,227 @@
+{
+  "created_at": "2026-06-06 21:44:24",
+  "elapsed_seconds": 14.749876499176025,
+  "models": [
+    "fake_braccent_codec",
+    "brspeech_sample"
+  ],
+  "manifests": [
+    "audio/data/manifests/coleta_manifest.csv",
+    "audio/data/coleta_manipulated/manifest.csv"
+  ],
+  "split": "all",
+  "row_count": 108,
+  "registered_audio_models": {
+    "brspeech_sample": {
+      "label": "BRSpeech-DF amostra (experimental)",
+      "path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/models/audio_deepfake_v1_brspeech_sample/audio_deepfake_v1_best.pth",
+      "summary_path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/models/audio_deepfake_v1_brspeech_sample/summary.json"
+    },
+    "default": {
+      "label": "FakeBrAccent codec equalizado",
+      "path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth",
+      "summary_path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json"
+    },
+    "fake_braccent_codec": {
+      "label": "FakeBrAccent codec equalizado",
+      "path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/audio_deepfake_v1_best.pth",
+      "summary_path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/model/weights/audio_deepfake_v1_fake_braccent_d_codec_equalized/summary.json"
+    }
+  },
+  "by_model": {
+    "brspeech_sample": {
+      "count": 54,
+      "label_counts": {
+        "fake": 27,
+        "real": 27
+      },
+      "mean_score": 0.6612247458720554,
+      "p90_score": 0.988422691822052,
+      "mean_segment_fake_ratio": 0.6604585348940188,
+      "threshold_mean": 0.549931526184082,
+      "metrics": {
+        "count": 54,
+        "accuracy": 0.5,
+        "f1": 0.5846153846153846,
+        "auc": 0.5075445816186557,
+        "false_positive_rate": 0.7037037037037037,
+        "false_negative_rate": 0.2962962962962963,
+        "true_positive": 19,
+        "true_negative": 8,
+        "false_positive": 19,
+        "false_negative": 8
+      }
+    },
+    "fake_braccent_codec": {
+      "count": 54,
+      "label_counts": {
+        "fake": 27,
+        "real": 27
+      },
+      "mean_score": 0.868852886888716,
+      "p90_score": 0.9828553199768066,
+      "mean_segment_fake_ratio": 0.22205754528559188,
+      "threshold_mean": 0.9744173288345337,
+      "metrics": {
+        "count": 54,
+        "accuracy": 0.46296296296296297,
+        "f1": 0.2564102564102564,
+        "auc": 0.49382716049382713,
+        "false_positive_rate": 0.25925925925925924,
+        "false_negative_rate": 0.8148148148148148,
+        "true_positive": 5,
+        "true_negative": 20,
+        "false_positive": 7,
+        "false_negative": 22
+      }
+    }
+  },
+  "by_model_domain": {
+    "brspeech_sample::coleta_celular": {
+      "count": 27,
+      "label_counts": {
+        "real": 27
+      },
+      "mean_score": 0.662941640433726,
+      "p90_score": 0.9856507182121277,
+      "mean_segment_fake_ratio": 0.6526793019803772,
+      "threshold_mean": 0.549931526184082,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    },
+    "brspeech_sample::manifest": {
+      "count": 27,
+      "label_counts": {
+        "fake": 27
+      },
+      "mean_score": 0.6595078513103848,
+      "p90_score": 0.988422691822052,
+      "mean_segment_fake_ratio": 0.6682377678076603,
+      "threshold_mean": 0.549931526184082,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    },
+    "fake_braccent_codec::coleta_celular": {
+      "count": 27,
+      "label_counts": {
+        "real": 27
+      },
+      "mean_score": 0.8717334756144771,
+      "p90_score": 0.9828553199768066,
+      "mean_segment_fake_ratio": 0.23000912302883628,
+      "threshold_mean": 0.9744173288345337,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    },
+    "fake_braccent_codec::manifest": {
+      "count": 27,
+      "label_counts": {
+        "fake": 27
+      },
+      "mean_score": 0.8659722981629548,
+      "p90_score": 0.9796950817108154,
+      "mean_segment_fake_ratio": 0.21410596754234745,
+      "threshold_mean": 0.9744173288345337,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    }
+  },
+  "by_model_source": {
+    "brspeech_sample::coleta_propria": {
+      "count": 27,
+      "label_counts": {
+        "real": 27
+      },
+      "mean_score": 0.662941640433726,
+      "p90_score": 0.9856507182121277,
+      "mean_segment_fake_ratio": 0.6526793019803772,
+      "threshold_mean": 0.549931526184082,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    },
+    "brspeech_sample::manifest": {
+      "count": 27,
+      "label_counts": {
+        "fake": 27
+      },
+      "mean_score": 0.6595078513103848,
+      "p90_score": 0.988422691822052,
+      "mean_segment_fake_ratio": 0.6682377678076603,
+      "threshold_mean": 0.549931526184082,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    },
+    "fake_braccent_codec::coleta_propria": {
+      "count": 27,
+      "label_counts": {
+        "real": 27
+      },
+      "mean_score": 0.8717334756144771,
+      "p90_score": 0.9828553199768066,
+      "mean_segment_fake_ratio": 0.23000912302883628,
+      "threshold_mean": 0.9744173288345337,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    },
+    "fake_braccent_codec::manifest": {
+      "count": 27,
+      "label_counts": {
+        "fake": 27
+      },
+      "mean_score": 0.8659722981629548,
+      "p90_score": 0.9796950817108154,
+      "mean_segment_fake_ratio": 0.21410596754234745,
+      "threshold_mean": 0.9744173288345337,
+      "metrics": {
+        "count": 27,
+        "accuracy": null,
+        "f1": null,
+        "auc": null,
+        "false_positive_rate": null,
+        "false_negative_rate": null
+      }
+    }
+  }
+}

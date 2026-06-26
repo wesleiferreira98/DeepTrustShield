@@ -8,7 +8,7 @@
 
 .mode-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -27,8 +27,8 @@
 
 .mode-btn.active {
   border-color: var(--color-primary);
-  color: var(--color-text);
-  background: rgba(99, 102, 241, 0.08);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
 .model-target-card {
@@ -89,7 +89,7 @@
 .upload-zone:hover,
 .upload-zone.dragging {
   border-color: var(--color-primary);
-  background: rgba(99, 102, 241, 0.05);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
 }
 
 .upload-zone.dragging {
@@ -269,7 +269,7 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 12px;
-  background: linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0.2));
+  background: linear-gradient(180deg, var(--color-bg-card), var(--color-bg-secondary));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -322,13 +322,13 @@
   font-size: 16px;
   font-weight: 700;
   line-height: 1.25;
-  color: #f8fafc;
+  color: var(--color-text);
 }
 
 .liveness-progress {
   height: 10px;
   width: 100%;
-  background: rgba(15, 23, 42, 0.25);
+  background: var(--color-border);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -342,18 +342,18 @@
 .liveness-percent {
   font-size: 14px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--color-text);
 }
 
 .liveness-status {
   font-size: 13px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--color-text-secondary);
 }
 
 .liveness-checklist {
   margin-top: 2px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.3);
+  border-top: 1px dashed var(--color-border);
   padding-top: 8px;
 }
 
@@ -361,7 +361,7 @@
   display: block;
   font-size: 11px;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -381,18 +381,18 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #cbd5e1;
-  opacity: 0.8;
+  color: var(--color-text-secondary);
+  opacity: 0.85;
 }
 
 .liveness-checklist li.current {
-  color: #f8fafc;
+  color: var(--color-text);
   opacity: 1;
   font-weight: 700;
 }
 
 .liveness-checklist li.done {
-  color: #86efac;
+  color: var(--color-success);
   opacity: 1;
 }
 
@@ -405,21 +405,21 @@
   justify-content: center;
   font-size: 10px;
   font-weight: 800;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: rgba(15, 23, 42, 0.6);
-  color: #cbd5e1;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
 .liveness-checklist li.current .check-icon {
-  border-color: rgba(251, 191, 36, 0.7);
-  color: #fde68a;
+  border-color: rgba(217, 119, 6, 0.7);
+  color: #d97706;
 }
 
 .liveness-checklist li.done .check-icon {
-  border-color: rgba(34, 197, 94, 0.7);
-  background: rgba(22, 163, 74, 0.3);
-  color: #bbf7d0;
+  border-color: rgba(22, 163, 74, 0.7);
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
 }
 
 .camera-note {
@@ -444,7 +444,7 @@
 }
 
 .camera-note.liveness-skip-note {
-  color: #60a5fa;
+  color: var(--color-primary);
 }
 
 .camera-error {

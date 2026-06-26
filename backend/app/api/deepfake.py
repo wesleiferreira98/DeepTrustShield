@@ -164,6 +164,7 @@ async def analyze_image(
     # Create job record
     job = Job(
         id=job_id,
+        mode="image",
         stage=JobStage.PENDING,
         progress=0,
         original_path=original_path,

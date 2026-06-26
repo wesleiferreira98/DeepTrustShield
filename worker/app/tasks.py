@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import logging
 import traceback
@@ -9,11 +10,23 @@ import math
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.config import config
+from app.config import config, get_audio_model_config
 from app.pipeline.face_detection import detect_faces
 from app.pipeline.quality_checks import check_quality
 from app.pipeline.preprocessing import preprocess_face
 from app.pipeline.inference import run_inference, get_loaded_model_version
+from app.pipeline.audio_inference import run_audio_inference
+from app.pipeline.audio_asr import ensure_audio_transcript_sidecar
+from app.pipeline.audio_ground_truth import load_audio_manipulation_ground_truth
+from app.pipeline.audio_phonetic_events import extract_phonetic_events
+from app.pipeline.audio_symbolic import (
+    combine_audio_decision,
+    diagnose_suspicious_audio_segments,
+    evaluate_audio_symbolic_rules,
+    evaluate_audio_temporal_memory,
+    extract_audio_symbolic_features,
+    generate_audio_executive_summary,
+)
 from app.db_models import Base, Job, Result, Artifact
 
 # Setup logging
@@ -110,6 +123,170 @@ def _default_flags() -> dict:
         "low_light": False,
         "face_too_small": False,
     }
+
+
+def calculate_audio_risk_level(p_fake: float, threshold: float) -> str:
+    if p_fake is None:
+        return "undetermined"
+    if p_fake < threshold:
+        return "low"
+    if p_fake < min(threshold + config.AUDIO_REVIEW_MARGIN, 0.80):
+        return "medium"
+    return "high"
+
+
+def process_deepfake_audio(
+    job_id: str,
+    audio_path: str,
+    use_temporal_memory: bool = True,
+    target_audio_model: str = "default",
+):
+    """Pipeline for deepfake detection from one audio file."""
+    db = get_db()
+    start_time = time.time()
+    flags = _default_flags()
+
+    try:
+        update_stage(db, job_id, "validating_image")
+        if not audio_path or not os.path.exists(audio_path):
+            raise FileNotFoundError("Arquivo de audio nao encontrado")
+
+        update_stage(db, job_id, "preprocessing")
+        update_stage(db, job_id, "model_inference")
+        audio_model_config = get_audio_model_config(target_audio_model)
+        audio_result = run_audio_inference(
+            audio_path,
+            audio_model_config["path"],
+            audio_model_config["summary_path"],
+        )
+        audio_result["requested_model"] = target_audio_model
+        audio_result["model_key"] = audio_model_config["key"]
+        audio_result["model_label"] = audio_model_config["label"]
+        if audio_model_config["key"] != "default":
+            audio_result["model_version"] = f"{audio_result.get('model_version', 'audio_deepfake_v1')}:{audio_model_config['key']}"
+
+        update_stage(db, job_id, "calibrating_score")
+        p_fake = audio_result["p_fake"]
+        threshold = audio_result["threshold"]
+        symbolic_features = extract_audio_symbolic_features(
+            audio_path,
+            {
+                **audio_result.get("audio_info", {}),
+                "segment_summary": audio_result.get("segment_summary", {}),
+            },
+        )
+        phonetic_extraction = extract_phonetic_events(
+            audio_path,
+            audio_info=audio_result.get("audio_info", {}),
+            segments=audio_result.get("segments", []),
+        )
+        asr_summary = {}
+        if phonetic_extraction.get("status") == "no_sidecar":
+            asr_summary = ensure_audio_transcript_sidecar(
+                audio_path,
+                enabled=config.AUDIO_ASR_ENABLED,
+                model_name=config.AUDIO_ASR_MODEL,
+                language=config.AUDIO_ASR_LANGUAGE,
+                device=config.AUDIO_ASR_DEVICE,
+                compute_type=config.AUDIO_ASR_COMPUTE_TYPE,
+                beam_size=config.AUDIO_ASR_BEAM_SIZE,
+                vad_filter=config.AUDIO_ASR_VAD_FILTER,
+                preprocess_audio=config.AUDIO_ASR_PREPROCESS_ENABLED,
+            )
+            if asr_summary.get("available"):
+                phonetic_extraction = extract_phonetic_events(
+                    audio_path,
+                    audio_info=audio_result.get("audio_info", {}),
+                    segments=audio_result.get("segments", []),
+                )
+        audio_result["phonetic_events"] = phonetic_extraction.get("events", [])
+        audio_result["segment_diagnostics"] = diagnose_suspicious_audio_segments(
+            audio_path,
+            audio_result.get("audio_info", {}),
+            audio_result.get("segments", []),
+            threshold,
+        )
+        temporal_memory = evaluate_audio_temporal_memory(
+            audio_path,
+            audio_result,
+            symbolic_features,
+            enabled=bool(use_temporal_memory),
+        )
+        audio_result["temporal_memory"] = temporal_memory
+        ground_truth = load_audio_manipulation_ground_truth(
+            audio_path,
+            audio_result.get("segments", []),
+            threshold,
+            temporal_memory.get("rupture_candidates", []),
+        )
+        symbolic_rules = evaluate_audio_symbolic_rules(
+            audio_result,
+            symbolic_features,
+            audio_result.get("segments", []),
+        )
+        symbolic_decision = combine_audio_decision(audio_result, symbolic_rules)
+        risk_level = symbolic_decision["risk_level"]
+
+        update_stage(db, job_id, "generating_evidence")
+        audio_summary = {
+            "threshold": threshold,
+            "decision": symbolic_decision["decision"],
+            "model": {
+                "requested_model": target_audio_model,
+                "model_key": audio_result.get("model_key"),
+                "model_label": audio_result.get("model_label"),
+                "model_version": audio_result.get("model_version"),
+            },
+            "audio_info": audio_result.get("audio_info", {}),
+            "segment_summary": audio_result.get("segment_summary", {}),
+            "segments": audio_result.get("segments", []),
+            "phonetic_event_extraction": {
+                key: value
+                for key, value in phonetic_extraction.items()
+                if key != "events"
+            },
+            "transcript": asr_summary
+            or {
+                "available": bool(phonetic_extraction.get("transcript", {}).get("text")),
+                **(phonetic_extraction.get("transcript") or {}),
+            },
+            "phonetic_events": phonetic_extraction.get("events", [])[:32],
+            "segment_diagnostics": audio_result.get("segment_diagnostics", {}),
+            "temporal_memory": temporal_memory,
+            "ground_truth": ground_truth,
+            "analysis_options": {
+                "temporal_memory_enabled": bool(use_temporal_memory),
+                "temporal_memory_status": temporal_memory.get("status") or ("disabled" if not use_temporal_memory else "unavailable"),
+            },
+            "symbolic": {
+                **symbolic_decision,
+                "features": symbolic_features,
+            },
+            "independent_symbolic": symbolic_decision.get("independent_symbolic", {}),
+        }
+        audio_summary["executive_summary"] = generate_audio_executive_summary(audio_summary)
+        save_artifact(db, job_id, original_meta=json.dumps({"audio_summary": audio_summary}))
+        save_result(db, job_id, p_fake, risk_level, flags, model_version=audio_result["model_version"])
+        update_stage(db, job_id, "done")
+
+        elapsed = time.time() - start_time
+        logger.info(
+            "[%s] Audio completed in %.2fs - p_fake: %.4f, threshold: %.4f, risk: %s",
+            job_id,
+            elapsed,
+            p_fake,
+            threshold,
+            risk_level,
+        )
+
+    except Exception as e:
+        logger.error(f"[{job_id}] Audio error: {str(e)}")
+        logger.error(traceback.format_exc())
+        update_stage(db, job_id, "error", str(e))
+        save_result(db, job_id, None, "undetermined", flags, model_version="audio_deepfake_v1")
+
+    finally:
+        db.close()
 
 
 def process_deepfake_image(job_id: str, image_path: str, target_model: str = "auto"):

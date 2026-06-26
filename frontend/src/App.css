@@ -1,58 +1,43 @@
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Root layout ── */
 .app {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+/* ── Scrollable content column ── */
+.app-body {
+  flex: 1;
+  min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
 
-.header {
-  padding: 24px;
-  text-align: center;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-bg-secondary);
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.logo-icon {
-  font-size: 32px;
-}
-
-.logo-text {
-  font-size: 28px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--color-primary) 0%, #a855f7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.tagline {
-  color: var(--color-text-secondary);
-  font-size: 14px;
-}
-
+/* ── Main areas ── */
 .main {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: 2rem;
 }
 
-.footer {
-  padding: 16px;
-  text-align: center;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: 12px;
+/* Dashboard / History — full-width pages */
+.main.main-page {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 2rem;
 }
 
+/* ── Error card ── */
 .error-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-danger);
@@ -62,15 +47,14 @@
   max-width: 400px;
 }
 
-.error-card h2 {
-  margin-bottom: 12px;
-}
+.error-card h2 { margin-bottom: 12px; }
 
 .error-card p {
   color: var(--color-text-secondary);
   margin-bottom: 24px;
 }
 
+/* ── Buttons ── */
 .btn-primary {
   background: var(--color-primary);
   color: white;
@@ -83,9 +67,7 @@
   transition: background 0.2s;
 }
 
-.btn-primary:hover {
-  background: var(--color-primary-hover);
-}
+.btn-primary:hover { background: var(--color-primary-hover); }
 
 .btn-secondary {
   background: transparent;
@@ -102,4 +84,18 @@
 .btn-secondary:hover {
   background: var(--color-bg-secondary);
   border-color: var(--color-text-secondary);
+}
+
+/* ── Mobile: empilha vertical e abre espaço para o bottom nav ── */
+@media (max-width: 680px) {
+  .app {
+    flex-direction: column;
+  }
+
+  .app-body {
+    height: auto;
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 60px; /* altura do mob-nav */
+  }
 }

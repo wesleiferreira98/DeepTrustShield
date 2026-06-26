@@ -1,0 +1,347 @@
+{
+  "threshold": 0.9744173288345337,
+  "decision": "real",
+  "model": {
+    "requested_model": "default",
+    "model_key": "default",
+    "model_label": "FakeBrAccent codec equalizado",
+    "model_version": "audio_deepfake_v1"
+  },
+  "audio_info": {
+    "source_sample_rate": 48000,
+    "target_sample_rate": 16000,
+    "channels": 1,
+    "original_samples": 548642,
+    "duration_seconds": 11.430041666666666,
+    "clip_seconds": 4,
+    "n_mels": 80
+  },
+  "segment_summary": {
+    "count": 5,
+    "window_seconds": 4,
+    "stride_seconds": 2,
+    "coverage_fraction": 1,
+    "max_segments": 32
+  },
+  "segments": [
+    {
+      "index": 0,
+      "start": 0,
+      "end": 4,
+      "duration_seconds": 4,
+      "p_fake": 0.14012739062309265
+    },
+    {
+      "index": 1,
+      "start": 2,
+      "end": 6,
+      "duration_seconds": 4,
+      "p_fake": 0.44006869196891785
+    },
+    {
+      "index": 2,
+      "start": 4,
+      "end": 8,
+      "duration_seconds": 4,
+      "p_fake": 0.3758993148803711
+    },
+    {
+      "index": 3,
+      "start": 6,
+      "end": 10,
+      "duration_seconds": 4,
+      "p_fake": 0.5115817189216614
+    },
+    {
+      "index": 4,
+      "start": 7.4300625,
+      "end": 11.4300625,
+      "duration_seconds": 4,
+      "p_fake": 0.26743677258491516
+    }
+  ],
+  "phonetic_event_extraction": {
+    "available": false,
+    "status": "no_sidecar",
+    "source": null,
+    "event_count": 0,
+    "candidate_count": 0,
+    "note": "Nenhuma transcricao ou lista de eventos foneticos foi encontrada ao lado do audio."
+  },
+  "transcript": {
+    "available": false,
+    "status": "failed",
+    "path": "../artifacts/361fd515-3a9b-4a2a-8125-f5c3e168446d/audio.transcript.json",
+    "text": "",
+    "word_count": 0,
+    "segment_count": 0,
+    "asr": {
+      "engine": "faster-whisper",
+      "model": "medium",
+      "language": "pt",
+      "device": "auto",
+      "compute_type": "default"
+    },
+    "error": "Library libcublas.so.12 is not found or cannot be loaded"
+  },
+  "phonetic_events": [],
+  "segment_diagnostics": {
+    "available": false,
+    "reason": "no_suspicious_segments",
+    "segments": [],
+    "summary": {
+      "suspicious_count": 0,
+      "terminal_suspicious_count": 0,
+      "possible_end_artifact": false
+    }
+  },
+  "temporal_memory": {
+    "available": true,
+    "status": "applied",
+    "enabled": true,
+    "attention_threshold": 0.9244173288345336,
+    "baseline": {
+      "median_score": 0.3758993148803711,
+      "mad_score": 0.10846254229545593,
+      "median_rms": 0.05087419971823692,
+      "median_silence_ratio": 0.3807656168937683
+    },
+    "rupture_candidate_count": 0,
+    "rupture_score": 0,
+    "rupture_candidates": [],
+    "explanations": [
+      "A memoria temporal nao encontrou ruptura local relevante."
+    ]
+  },
+  "ground_truth": {
+    "available": false,
+    "status": "not_found",
+    "audio_sha256": "8cbf2586ebb0bc3d62bf874549f5cccf6fbca9907d918975d7c914258dc3d374"
+  },
+  "analysis_options": {
+    "temporal_memory_enabled": true,
+    "temporal_memory_status": "applied"
+  },
+  "symbolic": {
+    "decision": "real",
+    "risk_level": "low",
+    "confidence": "moderate",
+    "neural_score": 0.38192304968833923,
+    "symbolic_score": 0.35000000000000003,
+    "final_score": 0.3723461347818374,
+    "decision_score": 0.3470227777957916,
+    "threshold": 0.9744173288345337,
+    "flags": {
+      "short_audio": false,
+      "very_short_audio": false,
+      "high_silence": false,
+      "low_volume": false,
+      "clipped_audio": false,
+      "near_threshold": false,
+      "strong_fake_score": false,
+      "strong_real_score": true,
+      "low_confidence_fake": false,
+      "feature_extraction_failed": false,
+      "partial_audio_analysis": false,
+      "segment_score_disagreement": true,
+      "isolated_suspicious_segment": false,
+      "consistent_suspicious_segments": false,
+      "regional_bias_review": false,
+      "domain_mismatch_warning": false,
+      "phonetic_layer_available": true,
+      "phonetic_coverage_insufficient": true,
+      "phonetic_consistency_support": false,
+      "phonetic_disruption_alert": false,
+      "terminal_suspicious_segments": false,
+      "possible_end_artifact": false,
+      "localized_manipulation_sensitivity": false,
+      "temporal_memory_available": true,
+      "temporal_memory_rupture_candidate": false,
+      "symbolic_contestation": false,
+      "neural_suspicion_contested": false
+    },
+    "explanations": [
+      "O modelo neural ficou bem abaixo do limite de audio fake.",
+      "Os scores por segmento variaram bastante ao longo do audio.",
+      "A camada fonetico-fonologica foi executada, mas a cobertura de eventos confiaveis ainda foi baixa."
+    ],
+    "adjustments": [
+      {
+        "reason": "strong_real_score",
+        "delta": -0.1
+      },
+      {
+        "reason": "segment_score_disagreement",
+        "delta": -0.05
+      }
+    ],
+    "segment_summary": {
+      "count": 5,
+      "fake_count": 0,
+      "fake_ratio": 0,
+      "min_score": 0.14012739062309265,
+      "max_score": 0.5115817189216614,
+      "mean_score": 0.3470227777957916,
+      "score_range": 0.3714543282985687,
+      "suspicious_segments": []
+    },
+    "segment_diagnostics": {
+      "available": false,
+      "reason": "no_suspicious_segments",
+      "segments": [],
+      "summary": {
+        "suspicious_count": 0,
+        "terminal_suspicious_count": 0,
+        "possible_end_artifact": false
+      }
+    },
+    "regional_bias_review": {
+      "review_needed": false,
+      "hypothesis": "not_triggered",
+      "evidence": [
+        "resampled_from_external_sample_rate",
+        "long_form_audio",
+        "natural_pause_or_recording_silence"
+      ],
+      "note": "Sem evidencia simbolica suficiente para levantar hipotese regional/domino."
+    },
+    "phonetic_review": {
+      "available": true,
+      "status": "insufficient_coverage",
+      "knowledge_version": "phonetic_rules_v1",
+      "knowledge_path": "/home/wesleiferreira/Documentos/GitHub/DeepTrustShield/audio/knowledge/phonetic_rules_v1.yaml",
+      "event_count": 0,
+      "coverage_score": 0,
+      "evidence_quality": {
+        "total_event_count": 0,
+        "classified_event_count": 0,
+        "classified_event_ratio": 0,
+        "average_confidence": 0,
+        "phenomenon_diversity_score": 0,
+        "quality_score": 0
+      },
+      "phonetic_consistency_score": 0,
+      "linguistic_plausibility_score": 0.4,
+      "raw_localized_disruption_score": 0,
+      "localized_disruption_score": 0,
+      "localized_disruption": {
+        "available": false,
+        "comparison_count": 0,
+        "raw_disruption_count": 0,
+        "aligned_disruption_count": 0,
+        "raw_score": 0,
+        "aligned_score": 0,
+        "phenomena": [],
+        "items": []
+      },
+      "alignment_score": 0,
+      "adjustment": 0,
+      "activated_rules": [
+        {
+          "rule_id": "G3",
+          "phenomenon": "global",
+          "condition": "insufficient_linguistic_coverage",
+          "effect": "reduce_layer_weight",
+          "weight": 0,
+          "explanation": "Ha poucos eventos linguistico-foneticos confiaveis para aplicar a camada.",
+          "reason": "coverage_below_minimum"
+        }
+      ],
+      "explanations": [
+        "Ha poucos eventos linguistico-foneticos confiaveis para aplicar a camada."
+      ]
+    },
+    "temporal_memory": {
+      "available": true,
+      "status": "applied",
+      "enabled": true,
+      "attention_threshold": 0.9244173288345336,
+      "baseline": {
+        "median_score": 0.3758993148803711,
+        "mad_score": 0.10846254229545593,
+        "median_rms": 0.05087419971823692,
+        "median_silence_ratio": 0.3807656168937683
+      },
+      "rupture_candidate_count": 0,
+      "rupture_score": 0,
+      "rupture_candidates": [],
+      "explanations": [
+        "A memoria temporal nao encontrou ruptura local relevante."
+      ]
+    },
+    "independent_symbolic": {
+      "score": 0.15,
+      "decision": "insufficient",
+      "confidence": "low",
+      "flags": {
+        "insufficient_evidence": true,
+        "audio_quality_warning": false,
+        "phonetic_pattern_stable": false,
+        "phonetic_disruption": false
+      },
+      "explanations": [
+        "Ha poucos eventos fonetico-fonologicos confiaveis para uma leitura simbolica independente forte."
+      ],
+      "evidence": {
+        "coverage_score": 0,
+        "quality_score": 0,
+        "event_count": 0,
+        "phonetic_consistency_score": 0,
+        "raw_localized_disruption_score": 0,
+        "linguistic_plausibility_score": 0.4
+      }
+    },
+    "features": {
+      "path": "audio.wav",
+      "available": true,
+      "duration_seconds": 11.430041666666666,
+      "clip_seconds": 4,
+      "analyzed_fraction": 1,
+      "source_sample_rate": 48000,
+      "target_sample_rate": 16000,
+      "channels": 1,
+      "rms_mean": 0.05025605484843254,
+      "rms_std": 0.05025605484843254,
+      "silence_ratio": 0.45255112648010254,
+      "clipping_ratio": 0
+    }
+  },
+  "independent_symbolic": {
+    "score": 0.15,
+    "decision": "insufficient",
+    "confidence": "low",
+    "flags": {
+      "insufficient_evidence": true,
+      "audio_quality_warning": false,
+      "phonetic_pattern_stable": false,
+      "phonetic_disruption": false
+    },
+    "explanations": [
+      "Ha poucos eventos fonetico-fonologicos confiaveis para uma leitura simbolica independente forte."
+    ],
+    "evidence": {
+      "coverage_score": 0,
+      "quality_score": 0,
+      "event_count": 0,
+      "phonetic_consistency_score": 0,
+      "raw_localized_disruption_score": 0,
+      "linguistic_plausibility_score": 0.4
+    }
+  },
+  "executive_summary": {
+    "title": "Áudio real",
+    "decision": "real",
+    "risk_level": "low",
+    "confidence": "moderate",
+    "summary": "O áudio foi classificado como real. O nível de risco estimado é baixo e a confiança da leitura simbólica é moderada. Nenhuma janela ultrapassou o limite calibrado de áudio fake. A camada fonético-fonológica não teve eventos suficientes para calibrar a decisão. A camada simbólica independente não teve evidência suficiente para confirmar a suspeita neural. Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio.",
+    "bullets": [
+      "O áudio foi classificado como real.",
+      "O nível de risco estimado é baixo e a confiança da leitura simbólica é moderada.",
+      "Nenhuma janela ultrapassou o limite calibrado de áudio fake.",
+      "A camada fonético-fonológica não teve eventos suficientes para calibrar a decisão.",
+      "A camada simbólica independente não teve evidência suficiente para confirmar a suspeita neural.",
+      "Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio."
+    ],
+    "recommendation": "Não há evidência simbólica forte de manipulação, mas a decisão deve ser interpretada dentro do contexto do áudio."
+  }
+}

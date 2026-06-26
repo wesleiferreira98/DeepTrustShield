@@ -516,10 +516,19 @@ def _extract_face_bbox(image, landmarks, margin_ratio: float = 0.18):
     if not xs or not ys:
         return None
 
-    left = max(0, int((min(xs) - margin_ratio) * width))
-    right = min(width, int((max(xs) + margin_ratio) * width))
-    top = max(0, int((min(ys) - margin_ratio) * height))
-    bottom = min(height, int((max(ys) + margin_ratio) * height))
+    raw_left = int(min(xs) * width)
+    raw_right = int(max(xs) * width)
+    raw_top = int(min(ys) * height)
+    raw_bottom = int(max(ys) * height)
+    face_width = max(raw_right - raw_left, 1)
+    face_height = max(raw_bottom - raw_top, 1)
+    margin_x = int(face_width * margin_ratio)
+    margin_y = int(face_height * margin_ratio)
+
+    left = max(0, raw_left - margin_x)
+    right = min(width, raw_right + margin_x)
+    top = max(0, raw_top - margin_y)
+    bottom = min(height, raw_bottom + margin_y)
     if right - left < 24 or bottom - top < 24:
         return None
     return left, top, right, bottom
@@ -539,7 +548,7 @@ def _line_overlap_ratio(start_a: float, end_a: float, start_b: float, end_b: flo
     return float(overlap / reference)
 
 
-def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> float:
+def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int], gray=None) -> float:
     height, width = edges.shape[:2]
     face_left, face_top, face_right, face_bottom = face_bbox
     face_width = max(face_right - face_left, 1)
@@ -622,6 +631,26 @@ def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> f
                 horizontal_positions["bottom"] = line_y
 
     vertical_pair_score = 0.0
+    has_horizontal_support = bool(top_horizontal or bottom_horizontal)
+    has_vertical_support = bool(left_vertical or right_vertical)
+    vertical_dark_pair = False
+    if gray is not None and left_vertical and right_vertical:
+        sample_top = max(0, face_top)
+        sample_bottom = min(height, face_bottom)
+
+        def _vertical_strip_mean(line_x: float) -> float:
+            center = int(round(line_x))
+            strip_left = max(0, center - 4)
+            strip_right = min(width, center + 5)
+            strip = gray[sample_top:sample_bottom, strip_left:strip_right]
+            if strip.size == 0:
+                return 1.0
+            return float(np.mean(strip) / 255.0)
+
+        left_strip_mean = _vertical_strip_mean(vertical_positions["left"])
+        right_strip_mean = _vertical_strip_mean(vertical_positions["right"])
+        vertical_dark_pair = bool(left_strip_mean <= 0.58 and right_strip_mean <= 0.58)
+
     if left_vertical and right_vertical:
         span = vertical_positions["right"] - vertical_positions["left"]
         span_ratio = span / max(face_width, 1)
@@ -629,7 +658,10 @@ def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> f
             span_score = 0.0
         else:
             span_score = min(1.0, max(0.0, (span_ratio - 1.05) / 1.35))
-        vertical_pair_score = min(1.0, 0.45 + 0.35 * min(left_vertical, right_vertical) + 0.20 * span_score)
+        if has_horizontal_support or vertical_dark_pair:
+            vertical_pair_score = min(1.0, 0.45 + 0.35 * min(left_vertical, right_vertical) + 0.20 * span_score)
+        else:
+            vertical_pair_score = 0.18 * min(left_vertical, right_vertical)
     else:
         vertical_pair_score = 0.12 * max(left_vertical, right_vertical)
 
@@ -641,7 +673,10 @@ def _score_screen_border_lines(edges, face_bbox: tuple[int, int, int, int]) -> f
             span_score = 0.0
         else:
             span_score = min(1.0, max(0.0, (span_ratio - 1.05) / 1.35))
-        horizontal_pair_score = min(1.0, 0.45 + 0.35 * min(top_horizontal, bottom_horizontal) + 0.20 * span_score)
+        if has_vertical_support:
+            horizontal_pair_score = min(1.0, 0.45 + 0.35 * min(top_horizontal, bottom_horizontal) + 0.20 * span_score)
+        else:
+            horizontal_pair_score = 0.15 * min(top_horizontal, bottom_horizontal)
     else:
         horizontal_pair_score = 0.10 * max(top_horizontal, bottom_horizontal)
 
@@ -719,7 +754,7 @@ def _score_screen_rectangle(image, face_bbox: tuple[int, int, int, int]) -> floa
         )
         best_score = max(best_score, float(max(0.0, min(1.0, score))))
 
-    border_line_score = _score_screen_border_lines(edges, face_bbox)
+    border_line_score = _score_screen_border_lines(edges, face_bbox, gray)
     return float(max(best_score, border_line_score))
 
 

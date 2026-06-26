@@ -82,3 +82,6 @@ audio/data/raw/asvspoof2019_downloads/LA.zip
 audio/data/
 audio/models/
 *.flac
+*.ogg
+.codex
+.codex/

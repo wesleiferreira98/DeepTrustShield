@@ -13,6 +13,8 @@ Sistema de detecção de deepfake em imagens usando deep learning.
 | [📡 API.md](API.md) | Referência completa da API REST com exemplos |
 | [⚖️ FAIRNESS.md](FAIRNESS.md) | Auditoria de viés, fairness e protocolo de avaliação por grupo |
 | [🎙️ AUDIO_PLAN.md](AUDIO_PLAN.md) | Planejamento técnico do MVP de detecção de fraude com áudio |
+| [🧠 AUDIO_SYMBOLIC_LAYER.md](AUDIO_SYMBOLIC_LAYER.md) | Arquitetura da camada simbólica para análise explicável de áudio |
+| [📊 AUDIO_FAKE_BRACCENT_D_REPORT.md](AUDIO_FAKE_BRACCENT_D_REPORT.md) | Relatório técnico da camada simbólica e treinamento com FakeBrAccent-D |
 
 ## Quick Start
 

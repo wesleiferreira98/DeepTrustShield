@@ -1,0 +1,296 @@
+version: "phonetic_rules_v1"
+language: "pt-BR"
+name: "Camada neuro-simbolica fonetico-fonologica V1"
+description: >
+  Base inicial de regras linguisticas para calibrar a suspeita neural por
+  consistencia fonetico-fonologica interna, sem inferir regiao ou classificar
+  sotaque do falante.
+
+principles:
+  - "A camada simbolica calibra, nao substitui, o detector neural."
+  - "Variacao linguistica legitima nao deve ser tratada como artefato."
+  - "O alvo principal e consistencia intra-audio, nao identificacao regional."
+  - "Pouca cobertura linguistica deve reduzir o peso simbolico."
+
+references:
+  - id: "ALiB"
+    title: "Atlas Linguistico do Brasil"
+    note: "Referencia linguistica para fenomenos variaveis do portugues brasileiro."
+  - id: "project_plan"
+    title: "docs/Plano de Audio.md"
+    note: "Plano operacional da camada neuro-simbolica de audio."
+
+thresholds:
+  min_required_events: 10
+  min_rule_confidence: 0.70
+  low_coverage_cutoff: 0.30
+  normal_coverage_cutoff: 0.60
+  max_negative_adjustment: -0.20
+  max_positive_adjustment: 0.20
+  neural_high_margin: 0.10
+  neural_peak_margin: 0.08
+  disruption_window_seconds: 6.0
+  localized_disruption_min_pairs: 2
+  aligned_disruption_min_pairs: 2
+  multi_phenomena_disruption_min_phenomena: 2
+
+phenomena:
+  rotic_coda:
+    description: "Realizacao ou apagamento de /r/ em coda interna ou externa."
+    variants:
+      - deletion
+      - tap
+      - retroflex
+      - velar
+      - glottal
+      - other
+    contexts:
+      - verb_infinitive_external_coda
+      - internal_coda
+      - external_coda_pause
+      - external_coda_linking
+  s_coda:
+    description: "Realizacao alveolar ou palatal de /s/ em coda."
+    variants:
+      - alveolar
+      - palatal
+      - voicing_assimilated
+      - deletion
+      - other
+    contexts:
+      - internal_coda
+      - external_coda_pause
+      - external_coda_consonant
+      - external_coda_vowel
+  td_before_i:
+    description: "Realizacao dentoalveolar ou palatalizada de /t,d/ diante de [i]."
+    variants:
+      - dentoalveolar
+      - palatalized
+      - affricated
+      - other
+    contexts:
+      - phonological_i
+      - derived_i
+      - palatal_fricative_preceding
+
+rules:
+  - id: "R1"
+    phenomenon: "rotic_coda"
+    condition: "verb_infinitive_final_r_deletion_consistent"
+    interpretation: "Variacao legitima frequente no portugues brasileiro falado."
+    effect: "reduce_suspicion"
+    weight: -0.05
+    requires:
+      min_events: 3
+      min_confidence: 0.75
+    explanation: "O apagamento de /r/ final em verbos no infinitivo e plausivel no portugues brasileiro falado."
+
+  - id: "R2"
+    phenomenon: "rotic_coda"
+    condition: "final_r_presence_and_deletion_without_local_disruption"
+    interpretation: "Variacao possivel por estilo, monitoramento de fala ou contexto."
+    effect: "reduce_suspicion_lightly"
+    weight: -0.03
+    requires:
+      min_events: 4
+      min_confidence: 0.70
+    explanation: "A alternancia de /r/ final apareceu sem ruptura localizada clara."
+
+  - id: "R3"
+    phenomenon: "rotic_coda"
+    condition: "abrupt_variant_switch_same_context"
+    interpretation: "Possivel ruptura fonetico-fonologica localizada."
+    effect: "increase_suspicion"
+    weight: 0.08
+    requires:
+      min_events: 4
+      min_confidence: 0.75
+    explanation: "Houve mudanca abrupta de variante rotica em contexto semelhante."
+
+  - id: "R4"
+    phenomenon: "rotic_coda"
+    condition: "isolated_internal_coda_deletion"
+    interpretation: "Evidencia fraca; nao concluir isoladamente."
+    effect: "neutral"
+    weight: 0.00
+    requires:
+      min_events: 1
+      min_confidence: 0.70
+    explanation: "O apagamento isolado de /r/ em coda interna nao foi usado como evidencia forte."
+
+  - id: "R5"
+    phenomenon: "rotic_coda"
+    condition: "dominant_variant_stable"
+    interpretation: "Padrao individual ou regionalmente marcado, mas estavel."
+    effect: "increase_consistency"
+    weight: -0.04
+    requires:
+      min_events: 5
+      min_confidence: 0.70
+    explanation: "A variante rotica dominante permaneceu estavel ao longo do audio."
+
+  - id: "S1"
+    phenomenon: "s_coda"
+    condition: "palatal_variant_recurrent_and_stable"
+    interpretation: "Variacao legitima documentada no portugues brasileiro."
+    effect: "reduce_suspicion_lightly"
+    weight: -0.04
+    requires:
+      min_events: 5
+      min_confidence: 0.70
+    explanation: "A realizacao palatal de /s/ em coda apareceu de modo recorrente e estavel."
+
+  - id: "S2"
+    phenomenon: "s_coda"
+    condition: "alveolar_variant_recurrent_and_stable"
+    interpretation: "Variacao legitima no portugues brasileiro."
+    effect: "reduce_suspicion_lightly"
+    weight: -0.03
+    requires:
+      min_events: 5
+      min_confidence: 0.70
+    explanation: "A realizacao alveolar de /s/ em coda apareceu de modo recorrente e estavel."
+
+  - id: "S3"
+    phenomenon: "s_coda"
+    condition: "abrupt_alveolar_palatal_switch_same_context"
+    interpretation: "Possivel inconsistencia fonetica localizada."
+    effect: "increase_suspicion"
+    weight: 0.08
+    requires:
+      min_events: 5
+      min_confidence: 0.75
+    explanation: "Houve troca abrupta entre /s/ alveolar e palatal em contexto semelhante."
+
+  - id: "S4"
+    phenomenon: "s_coda"
+    condition: "palatalization_in_favoring_context"
+    interpretation: "Padrao fonetico plausivel por contexto seguinte."
+    effect: "neutral"
+    weight: 0.00
+    requires:
+      min_events: 3
+      min_confidence: 0.70
+    explanation: "A palatalizacao de /s/ ocorreu em contexto fonetico favorecedor."
+
+  - id: "S5"
+    phenomenon: "s_coda"
+    condition: "low_palatalization_external_coda_pause"
+    interpretation: "Variacao legitima em final de palavra diante de pausa."
+    effect: "neutral"
+    weight: 0.00
+    requires:
+      min_events: 3
+      min_confidence: 0.70
+    explanation: "A baixa palatalizacao de /s/ final diante de pausa nao foi penalizada."
+
+  - id: "TD1"
+    phenomenon: "td_before_i"
+    condition: "palatalized_variant_recurrent"
+    interpretation: "Variacao majoritaria em muitos centros urbanos brasileiros."
+    effect: "reduce_suspicion_lightly"
+    weight: -0.04
+    requires:
+      min_events: 4
+      min_confidence: 0.70
+    explanation: "A palatalizacao de /t,d/ diante de [i] apareceu como padrao plausivel."
+
+  - id: "TD2"
+    phenomenon: "td_before_i"
+    condition: "dentoalveolar_variant_stable"
+    interpretation: "Variacao conservadora legitima."
+    effect: "reduce_suspicion_lightly"
+    weight: -0.03
+    requires:
+      min_events: 4
+      min_confidence: 0.70
+    explanation: "A realizacao dentoalveolar de /t,d/ diante de [i] apareceu de modo estavel."
+
+  - id: "TD3"
+    phenomenon: "td_before_i"
+    condition: "abrupt_dentoalveolar_palatalized_switch_same_context"
+    interpretation: "Possivel ruptura fonetico-fonologica localizada."
+    effect: "increase_suspicion"
+    weight: 0.08
+    requires:
+      min_events: 4
+      min_confidence: 0.75
+    explanation: "Houve alternancia abrupta de /t,d/ diante de [i] em contexto semelhante."
+
+  - id: "TD4"
+    phenomenon: "td_before_i"
+    condition: "palatalization_after_palatal_fricative"
+    interpretation: "Padrao plausivel por assimilacao."
+    effect: "neutral"
+    weight: 0.00
+    requires:
+      min_events: 2
+      min_confidence: 0.70
+    explanation: "A palatalizacao de /t,d/ ocorreu apos contexto palatal favorecedor."
+
+  - id: "G1"
+    phenomenon: "global"
+    condition: "multiple_phenomena_stable"
+    interpretation: "Alta consistencia intra-audio."
+    effect: "reduce_suspicion"
+    weight: -0.10
+    requires:
+      min_events: 10
+      min_confidence: 0.70
+    explanation: "Os fenomenos fonetico-fonologicos observados mantiveram padrao estavel."
+
+  - id: "G2"
+    phenomenon: "global"
+    condition: "multiple_phenomena_shift_same_interval"
+    interpretation: "Ruptura localizada em multiplos fenomenos."
+    effect: "increase_suspicion"
+    weight: 0.10
+    requires:
+      min_events: 8
+      min_confidence: 0.75
+    explanation: "Multiplos fenomenos mudaram no mesmo intervalo temporal."
+
+  - id: "G3"
+    phenomenon: "global"
+    condition: "insufficient_linguistic_coverage"
+    interpretation: "Cobertura insuficiente para calibracao linguistica forte."
+    effect: "reduce_layer_weight"
+    weight: 0.00
+    requires:
+      min_events: 0
+      min_confidence: 0.00
+    explanation: "Ha poucos eventos linguistico-foneticos confiaveis para aplicar a camada."
+
+  - id: "G4"
+    phenomenon: "global"
+    condition: "low_audio_or_alignment_quality"
+    interpretation: "Evidencia linguistica fraca."
+    effect: "inconclusive"
+    weight: 0.00
+    requires:
+      min_events: 0
+      min_confidence: 0.00
+    explanation: "A qualidade do audio ou do alinhamento reduz a confiabilidade da analise fonetica."
+
+  - id: "G5"
+    phenomenon: "global"
+    condition: "high_neural_score_with_consistent_linguistics"
+    interpretation: "Possivel falso positivo neural por variacao legitima."
+    effect: "reduce_suspicion"
+    weight: -0.10
+    requires:
+      min_events: 10
+      min_confidence: 0.70
+    explanation: "O score neural esta alto, mas os padroes fonetico-fonologicos foram consistentes."
+
+  - id: "G6"
+    phenomenon: "global"
+    condition: "high_neural_score_with_aligned_linguistic_disruption"
+    interpretation: "Evidencia convergente de suspeita."
+    effect: "increase_suspicion"
+    weight: 0.12
+    requires:
+      min_events: 8
+      min_confidence: 0.75
+    explanation: "A ruptura linguistica localizada coincidiu com pico do detector neural."
